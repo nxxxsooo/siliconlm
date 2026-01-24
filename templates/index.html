@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Localboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .status-running { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+        .status-stopped { background: #6b7280; }
+        .progress-bar { transition: width 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 flex items-center gap-3">
+            <span>Localboard</span>
+            <span id="refresh-indicator" class="text-sm text-gray-500"></span>
+        </h1>
+
+        <!-- System Stats -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Memory</div>
+                <div class="text-2xl font-bold" id="mem-percent">--%</div>
+                <div class="text-sm text-gray-500" id="mem-detail"></div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Disk</div>
+                <div class="text-2xl font-bold" id="disk-percent">--%</div>
+                <div class="text-sm text-gray-500" id="disk-detail"></div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4">
+                <div class="text-gray-400 text-sm">Models Size</div>
+                <div class="text-2xl font-bold" id="models-size">-- GB</div>
+            </div>
+        </div>
+
+        <!-- Services -->
+        <h2 class="text-xl font-semibold mb-3">Services</h2>
+        <div class="grid grid-cols-3 gap-4 mb-6" id="services-container"></div>
+
+        <!-- Downloads -->
+        <h2 class="text-xl font-semibold mb-3">Downloads</h2>
+        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="download-input" placeholder="mlx-community/model-name"
+                       class="flex-1 bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="startDownload()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+                    Download
+                </button>
+            </div>
+            <div class="flex flex-wrap gap-2" id="presets-container"></div>
+        </div>
+        <div id="downloads-container" class="space-y-2 mb-6"></div>
+
+        <!-- Models -->
+        <h2 class="text-xl font-semibold mb-3">Downloaded Models</h2>
+        <div class="bg-gray-800 rounded-lg overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-700">
+                    <tr>
+                        <th class="text-left p-3">Model</th>
+                        <th class="text-right p-3">Size</th>
+                        <th class="text-right p-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="models-table"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function renderServices(services) {
+            const container = document.getElementById('services-container');
+            container.innerHTML = services.map(s => `
+                <div class="bg-gray-800 rounded-lg p-4">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
+                        <div>
+                            <div class="font-medium">${s.display}</div>
+                            <div class="text-sm text-gray-500">
+                                ${s.port ? 'Port ' + s.port : ''}
+                                ${s.pid ? 'PID ' + s.pid : ''}
+                                ${!s.running && s.note ? s.note : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        ${s.running ? `
+                            <button onclick="serviceAction('${s.name}', 'stop')"
+                                    class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm flex-1">
+                                Stop
+                            </button>
+                            <button onclick="serviceAction('${s.name}', 'restart')"
+                                    class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-sm flex-1">
+                                Restart
+                            </button>
+                        ` : `
+                            ${s.can_start ? `
+                                <button onclick="serviceAction('${s.name}', 'start')"
+                                        class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm flex-1">
+                                    Start
+                                </button>
+                            ` : `
+                                <span class="text-gray-500 text-sm">Stopped</span>
+                            `}
+                        `}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderPresets(presets) {
+            const container = document.getElementById('presets-container');
+            container.innerHTML = presets.map(p => `
+                <button onclick="document.getElementById('download-input').value='${p.repo}'"
+                        class="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs"
+                        title="${p.desc}">
+                    ${p.repo.split('/')[1]}
+                </button>
+            `).join('');
+        }
+
+        function renderDownloads(downloads) {
+            const container = document.getElementById('downloads-container');
+            if (downloads.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-sm">No active downloads</div>';
+                return;
+            }
+            container.innerHTML = downloads.map(d => `
+                <div class="bg-gray-800 rounded-lg p-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-medium text-sm">${d.repo}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm ${d.status === 'completed' ? 'text-green-400' :
+                                                  d.status === 'error' ? 'text-red-400' : 'text-gray-400'}">
+                                ${d.status}
+                            </span>
+                            <button onclick="removeDownload('${d.id}')" class="text-gray-500 hover:text-gray-300">✕</button>
+                        </div>
+                    </div>
+                    <div class="bg-gray-700 rounded-full h-2 overflow-hidden">
+                        <div class="bg-blue-500 h-full progress-bar" style="width: ${d.progress}%"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderModels(models) {
+            const table = document.getElementById('models-table');
+            table.innerHTML = models.map(m => `
+                <tr class="border-t border-gray-700 hover:bg-gray-750">
+                    <td class="p-3 font-mono text-xs">${m.name}</td>
+                    <td class="p-3 text-right">${formatBytes(m.size)}</td>
+                    <td class="p-3 text-right">
+                        <button onclick="revealModel('${m.path}')"
+                                class="text-blue-400 hover:text-blue-300 text-sm">
+                            Show in Finder
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                document.getElementById('mem-percent').textContent = data.system.memory.percent + '%';
+                document.getElementById('mem-detail').textContent =
+                    `${formatBytes(data.system.memory.used)} / ${formatBytes(data.system.memory.total)}`;
+                document.getElementById('disk-percent').textContent = data.system.disk.percent + '%';
+                document.getElementById('disk-detail').textContent = `${formatBytes(data.system.disk.free)} free`;
+                document.getElementById('models-size').textContent = formatBytes(data.system.models_size);
+
+                renderServices(data.services);
+                renderPresets(data.presets);
+                renderDownloads(data.downloads);
+                renderModels(data.models);
+
+                document.getElementById('refresh-indicator').textContent =
+                    'Updated ' + new Date().toLocaleTimeString();
+            } catch (e) {
+                console.error('Failed to fetch status:', e);
+            }
+        }
+
+        async function serviceAction(name, action) {
+            await fetch(`/api/service/${name}/${action}`, { method: 'POST' });
+            setTimeout(fetchStatus, 500);
+        }
+
+        async function startDownload() {
+            const input = document.getElementById('download-input');
+            const repo = input.value.trim();
+            if (!repo) return;
+
+            await fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo })
+            });
+            input.value = '';
+            fetchStatus();
+        }
+
+        async function removeDownload(taskId) {
+            await fetch(`/api/download/${taskId}`, { method: 'DELETE' });
+            fetchStatus();
+        }
+
+        async function revealModel(path) {
+            await fetch('/api/model/reveal?path=' + encodeURIComponent(path), { method: 'POST' });
+        }
+
+        fetchStatus();
+        setInterval(fetchStatus, 3000);
+    </script>
+</body>
+</html>
