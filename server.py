@@ -62,8 +62,9 @@ DOWNLOAD_PRESETS = [
     {"repo": "mlx-community/e5-mistral-7b-instruct-mlx", "desc": "Large embedding (~2.8GB)"},
 ]
 
-# Track download processes
+# Track download processes and speeds
 DOWNLOAD_PROCESSES: dict = {}  # {task_id: Process}
+DOWNLOAD_SPEEDS: dict = {}  # {repo: {last_size, last_time, speed}}
 
 
 def check_port(port: int) -> bool:
@@ -148,6 +149,7 @@ def get_downloaded_models() -> list:
 
 def detect_incomplete_downloads() -> list:
     """Detect models that are actually incomplete (missing expected files)"""
+    import time
     incomplete = []
     if MODELS_DIR.exists():
         for org_dir in MODELS_DIR.iterdir():
@@ -165,6 +167,7 @@ def detect_incomplete_downloads() -> list:
 
                         # If has index file, check if all parts exist
                         is_incomplete = False
+                        total_size = 0
                         if index_file.exists():
                             try:
                                 import json
@@ -175,6 +178,8 @@ def detect_incomplete_downloads() -> list:
                                 existing_files = {f.name for f in safetensors}
                                 if expected_files - existing_files:
                                     is_incomplete = True
+                                # Estimate total size (rough: ~5GB per shard for 4bit)
+                                total_size = len(expected_files) * 5 * 1024 * 1024 * 1024
                             except:
                                 pass
                         # Also check for .incomplete files
@@ -183,10 +188,34 @@ def detect_incomplete_downloads() -> list:
 
                         if is_incomplete:
                             try:
-                                size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                                current_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                                current_time = time.time()
+
+                                # Calculate speed
+                                speed = "0 MB/s"
+                                if repo in DOWNLOAD_SPEEDS:
+                                    prev = DOWNLOAD_SPEEDS[repo]
+                                    time_diff = current_time - prev["last_time"]
+                                    if time_diff > 0:
+                                        size_diff = current_size - prev["last_size"]
+                                        speed_bps = size_diff / time_diff
+                                        speed = f"{speed_bps / 1024 / 1024:.1f} MB/s"
+
+                                DOWNLOAD_SPEEDS[repo] = {
+                                    "last_size": current_size,
+                                    "last_time": current_time
+                                }
+
+                                progress = 0
+                                if total_size > 0:
+                                    progress = min(99, int((current_size / total_size) * 100))
+
                                 incomplete.append({
                                     "repo": repo,
-                                    "current_size": size,
+                                    "current_size": current_size,
+                                    "total_size": total_size if total_size > 0 else None,
+                                    "progress": progress,
+                                    "speed": speed,
                                     "path": str(model_dir),
                                     "status": "incomplete"
                                 })

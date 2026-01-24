@@ -197,7 +197,7 @@
                 const progress = d.progress || 0;
                 const speed = d.speed || '';
                 const progressText = d.total_size ? `${currentMB} / ${totalMB} MB (${progress}%)` : `${currentGB} GB downloaded`;
-                const speedText = speed && d.status === 'downloading' ? ` • ${speed}` : '';
+                const speedText = speed && (d.status === 'downloading' || d.status === 'incomplete') ? ` • ${speed}` : '';
                 const isExternal = d.status === 'external' || d.status === 'incomplete';
 
                 return `
