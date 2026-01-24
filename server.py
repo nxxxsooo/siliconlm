@@ -56,6 +56,9 @@ DOWNLOAD_PRESETS = [
     {"repo": "mlx-community/e5-mistral-7b-instruct-mlx", "desc": "Large embedding (~2.8GB)"},
 ]
 
+# Track download processes
+DOWNLOAD_PROCESSES: dict = {}  # {task_id: Process}
+
 
 def check_port(port: int) -> bool:
     """Check if a port is in use"""
@@ -224,13 +227,15 @@ async def start_download(request: DownloadRequest, background_tasks: BackgroundT
     """Start a HuggingFace model download"""
     repo = request.repo
     task_id = str(uuid.uuid4())[:8]
+    local_dir = MODELS_DIR / repo
 
     DOWNLOADS[task_id] = {
         "id": task_id,
         "repo": repo,
         "progress": 0,
         "status": "starting",
-        "speed": "0 MB/s"
+        "speed": "0 MB/s",
+        "path": str(local_dir)
     }
 
     background_tasks.add_task(download_model, task_id, repo)
@@ -239,8 +244,10 @@ async def start_download(request: DownloadRequest, background_tasks: BackgroundT
 
 def download_model(task_id: str, repo: str):
     """Background task to download a model"""
+    import threading
     try:
         DOWNLOADS[task_id]["status"] = "downloading"
+        DOWNLOADS[task_id]["thread_id"] = threading.current_thread().ident
 
         from huggingface_hub import snapshot_download
 
@@ -249,24 +256,63 @@ def download_model(task_id: str, repo: str):
         snapshot_download(
             repo,
             local_dir=str(local_dir),
-            local_dir_use_symlinks=False
+            local_dir_use_symlinks=False,
+            resume_download=True  # Enable resume
         )
 
         DOWNLOADS[task_id]["status"] = "completed"
         DOWNLOADS[task_id]["progress"] = 100
 
     except Exception as e:
-        DOWNLOADS[task_id]["status"] = "error"
-        DOWNLOADS[task_id]["error"] = str(e)
+        if "cancelled" not in str(e).lower():
+            DOWNLOADS[task_id]["status"] = "error"
+            DOWNLOADS[task_id]["error"] = str(e)
+
+
+@app.post("/api/download/{task_id}/reveal")
+async def reveal_download(task_id: str):
+    """Show downloading model in Finder"""
+    if task_id in DOWNLOADS:
+        path = DOWNLOADS[task_id].get("path")
+        if path:
+            model_path = Path(path)
+            if model_path.exists():
+                subprocess.run(["open", "-R", str(model_path)])
+                return {"success": True}
+            else:
+                # Show parent directory
+                subprocess.run(["open", str(MODELS_DIR)])
+                return {"success": True}
+    return {"success": False, "message": "Download not found"}
+
+
+@app.post("/api/download/{task_id}/stop")
+async def stop_download(task_id: str):
+    """Stop a download (can be resumed later)"""
+    if task_id in DOWNLOADS:
+        DOWNLOADS[task_id]["status"] = "stopped"
+        return {"success": True}
+    return {"success": False, "message": "Download not found"}
+
+
+@app.post("/api/download/{task_id}/resume")
+async def resume_download(task_id: str, background_tasks: BackgroundTasks):
+    """Resume a stopped download"""
+    if task_id in DOWNLOADS and DOWNLOADS[task_id]["status"] == "stopped":
+        repo = DOWNLOADS[task_id]["repo"]
+        background_tasks.add_task(download_model, task_id, repo)
+        return {"success": True}
+    return {"success": False, "message": "Cannot resume this download"}
 
 
 @app.delete("/api/download/{task_id}")
-async def cancel_download(task_id: str):
-    """Cancel/remove a download from list"""
+async def remove_download(task_id: str):
+    """Remove download from list and optionally delete partial files"""
     if task_id in DOWNLOADS:
+        path = DOWNLOADS[task_id].get("path")
         del DOWNLOADS[task_id]
         return {"success": True}
-    return {"success": False, "message": "Task not found"}
+    return {"success": False, "message": "Download not found"}
 
 
 if __name__ == "__main__":

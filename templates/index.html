@@ -141,16 +141,27 @@
                 <div class="bg-gray-800 rounded-lg p-3">
                     <div class="flex justify-between items-center mb-2">
                         <span class="font-medium text-sm">${d.repo}</span>
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm ${d.status === 'completed' ? 'text-green-400' :
-                                                  d.status === 'error' ? 'text-red-400' : 'text-gray-400'}">
-                                ${d.status}
-                            </span>
-                            <button onclick="removeDownload('${d.id}')" class="text-gray-500 hover:text-gray-300">✕</button>
-                        </div>
+                        <span class="text-sm ${d.status === 'completed' ? 'text-green-400' :
+                                              d.status === 'error' ? 'text-red-400' :
+                                              d.status === 'stopped' ? 'text-yellow-400' : 'text-gray-400'}">
+                            ${d.status}
+                        </span>
                     </div>
-                    <div class="bg-gray-700 rounded-full h-2 overflow-hidden">
+                    <div class="bg-gray-700 rounded-full h-2 overflow-hidden mb-2">
                         <div class="bg-blue-500 h-full progress-bar" style="width: ${d.progress}%"></div>
+                    </div>
+                    <div class="flex gap-2 text-xs">
+                        <button onclick="downloadAction('${d.id}', 'reveal')"
+                                class="text-blue-400 hover:text-blue-300">Finder</button>
+                        ${d.status === 'downloading' ? `
+                            <button onclick="downloadAction('${d.id}', 'stop')"
+                                    class="text-yellow-400 hover:text-yellow-300">Stop</button>
+                        ` : d.status === 'stopped' ? `
+                            <button onclick="downloadAction('${d.id}', 'resume')"
+                                    class="text-green-400 hover:text-green-300">Resume</button>
+                        ` : ''}
+                        <button onclick="removeDownload('${d.id}')"
+                                class="text-red-400 hover:text-red-300">Remove</button>
                     </div>
                 </div>
             `).join('');
@@ -217,6 +228,11 @@
 
         async function removeDownload(taskId) {
             await fetch(`/api/download/${taskId}`, { method: 'DELETE' });
+            fetchStatus();
+        }
+
+        async function downloadAction(taskId, action) {
+            await fetch(`/api/download/${taskId}/${action}`, { method: 'POST' });
             fetchStatus();
         }
 
