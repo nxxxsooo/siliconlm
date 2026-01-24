@@ -243,28 +243,64 @@ async def start_download(request: DownloadRequest, background_tasks: BackgroundT
 
 
 def download_model(task_id: str, repo: str):
-    """Background task to download a model"""
+    """Background task to download a model with progress tracking"""
     import threading
+    import time
     try:
         DOWNLOADS[task_id]["status"] = "downloading"
         DOWNLOADS[task_id]["thread_id"] = threading.current_thread().ident
 
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import snapshot_download, HfApi
 
         local_dir = MODELS_DIR / repo
 
+        # Get total size from HuggingFace
+        try:
+            api = HfApi()
+            repo_info = api.repo_info(repo)
+            total_size = sum(s.size for s in repo_info.siblings if s.size)
+            DOWNLOADS[task_id]["total_size"] = total_size
+        except:
+            total_size = 0
+            DOWNLOADS[task_id]["total_size"] = 0
+
+        # Start progress monitor thread
+        stop_monitor = threading.Event()
+
+        def monitor_progress():
+            while not stop_monitor.is_set():
+                try:
+                    if local_dir.exists():
+                        current_size = sum(f.stat().st_size for f in local_dir.rglob('*') if f.is_file())
+                        DOWNLOADS[task_id]["current_size"] = current_size
+                        if total_size > 0:
+                            progress = min(99, int((current_size / total_size) * 100))
+                            DOWNLOADS[task_id]["progress"] = progress
+                            DOWNLOADS[task_id]["speed"] = f"{current_size / 1024 / 1024:.1f} MB"
+                except:
+                    pass
+                time.sleep(2)
+
+        monitor_thread = threading.Thread(target=monitor_progress, daemon=True)
+        monitor_thread.start()
+
+        # Download with resume support
         snapshot_download(
             repo,
             local_dir=str(local_dir),
             local_dir_use_symlinks=False,
-            resume_download=True  # Enable resume
+            resume_download=True
         )
 
+        stop_monitor.set()
         DOWNLOADS[task_id]["status"] = "completed"
         DOWNLOADS[task_id]["progress"] = 100
+        if total_size > 0:
+            DOWNLOADS[task_id]["current_size"] = total_size
 
     except Exception as e:
-        if "cancelled" not in str(e).lower():
+        stop_monitor.set() if 'stop_monitor' in dir() else None
+        if "cancelled" not in str(e).lower() and task_id in DOWNLOADS:
             DOWNLOADS[task_id]["status"] = "error"
             DOWNLOADS[task_id]["error"] = str(e)
 

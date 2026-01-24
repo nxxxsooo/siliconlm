@@ -188,34 +188,45 @@
                 container.innerHTML = '<div class="text-gray-500 text-sm">No active downloads</div>';
                 return;
             }
-            container.innerHTML = downloads.map(d => `
+            container.innerHTML = downloads.map(d => {
+                const currentMB = d.current_size ? (d.current_size / 1024 / 1024).toFixed(1) : '0';
+                const totalMB = d.total_size ? (d.total_size / 1024 / 1024).toFixed(1) : '?';
+                const totalGB = d.total_size ? (d.total_size / 1024 / 1024 / 1024).toFixed(2) : '?';
+                const progressText = d.total_size ? `${currentMB} / ${totalMB} MB (${d.progress}%)` : `${currentMB} MB`;
+
+                return `
                 <div class="bg-gray-800 rounded-lg p-3">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="font-medium text-sm">${d.repo}</span>
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-medium text-sm">${d.repo.split('/')[1]}</span>
                         <span class="text-sm ${d.status === 'completed' ? 'text-green-400' :
                                               d.status === 'error' ? 'text-red-400' :
-                                              d.status === 'stopped' ? 'text-yellow-400' : 'text-gray-400'}">
-                            ${d.status}
+                                              d.status === 'stopped' ? 'text-yellow-400' : 'text-blue-400'}">
+                            ${d.status === 'downloading' ? 'Downloading...' : d.status}
                         </span>
                     </div>
-                    <div class="bg-gray-700 rounded-full h-2 overflow-hidden mb-2">
-                        <div class="bg-blue-500 h-full progress-bar" style="width: ${d.progress}%"></div>
+                    <div class="text-xs text-gray-400 mb-2">${progressText}</div>
+                    <div class="bg-gray-700 rounded-full h-3 overflow-hidden mb-2">
+                        <div class="bg-gradient-to-r from-blue-500 to-blue-400 h-full progress-bar transition-all duration-500"
+                             style="width: ${d.progress}%"></div>
                     </div>
-                    <div class="flex gap-2 text-xs">
-                        <button onclick="downloadAction('${d.id}', 'reveal')"
-                                class="text-blue-400 hover:text-blue-300">Finder</button>
-                        ${d.status === 'downloading' ? `
-                            <button onclick="downloadAction('${d.id}', 'stop')"
-                                    class="text-yellow-400 hover:text-yellow-300">Stop</button>
-                        ` : d.status === 'stopped' ? `
-                            <button onclick="downloadAction('${d.id}', 'resume')"
-                                    class="text-green-400 hover:text-green-300">Resume</button>
-                        ` : ''}
-                        <button onclick="removeDownload('${d.id}')"
-                                class="text-red-400 hover:text-red-300">Remove</button>
+                    <div class="flex justify-between items-center">
+                        <div class="flex gap-3 text-xs">
+                            <button onclick="downloadAction('${d.id}', 'reveal')"
+                                    class="text-blue-400 hover:text-blue-300">📁 Finder</button>
+                            ${d.status === 'downloading' ? `
+                                <button onclick="downloadAction('${d.id}', 'stop')"
+                                        class="text-yellow-400 hover:text-yellow-300">⏸ Pause</button>
+                            ` : d.status === 'stopped' ? `
+                                <button onclick="downloadAction('${d.id}', 'resume')"
+                                        class="text-green-400 hover:text-green-300">▶ Resume</button>
+                            ` : ''}
+                            <button onclick="removeDownload('${d.id}')"
+                                    class="text-red-400 hover:text-red-300">✕ Remove</button>
+                        </div>
+                        ${d.total_size ? `<span class="text-xs text-gray-500">${totalGB} GB total</span>` : ''}
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function renderModels(models) {
