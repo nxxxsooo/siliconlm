@@ -140,6 +140,35 @@ def get_downloaded_models() -> list:
     return sorted(models, key=lambda x: x['size'], reverse=True)
 
 
+def detect_incomplete_downloads() -> list:
+    """Detect models that may be downloading externally"""
+    incomplete = []
+    if MODELS_DIR.exists():
+        for org_dir in MODELS_DIR.iterdir():
+            if org_dir.is_dir():
+                for model_dir in org_dir.iterdir():
+                    if model_dir.is_dir():
+                        repo = f"{org_dir.name}/{model_dir.name}"
+                        # Skip if already tracked in DOWNLOADS
+                        if any(d.get("repo") == repo for d in DOWNLOADS.values()):
+                            continue
+                        # Check for incomplete markers
+                        has_incomplete = any(model_dir.glob("*.incomplete")) or \
+                                        any(model_dir.glob(".huggingface/*"))
+                        if has_incomplete:
+                            try:
+                                size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                                incomplete.append({
+                                    "repo": repo,
+                                    "current_size": size,
+                                    "path": str(model_dir),
+                                    "status": "external"
+                                })
+                            except:
+                                pass
+    return incomplete
+
+
 # API Routes
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -152,11 +181,13 @@ async def index():
 async def get_status():
     """Get all service statuses and system stats"""
     services = [get_service_status(name) for name in SERVICES]
+    # Combine tracked downloads with detected external downloads
+    all_downloads = list(DOWNLOADS.values()) + detect_incomplete_downloads()
     return {
         "services": services,
         "system": get_system_stats(),
         "models": get_downloaded_models(),
-        "downloads": list(DOWNLOADS.values()),
+        "downloads": all_downloads,
         "presets": DOWNLOAD_PRESETS
     }
 
