@@ -188,23 +188,34 @@ def detect_incomplete_downloads() -> list:
 
                         if is_incomplete:
                             try:
+                                # Include .cache directory in size calculation (HF downloads there first)
                                 current_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
                                 current_time = time.time()
 
-                                # Calculate speed
+                                # Calculate speed with smoothing
                                 speed = "0 MB/s"
                                 if repo in DOWNLOAD_SPEEDS:
                                     prev = DOWNLOAD_SPEEDS[repo]
                                     time_diff = current_time - prev["last_time"]
-                                    if time_diff > 0:
+                                    if time_diff >= 1:  # At least 1 second
                                         size_diff = current_size - prev["last_size"]
-                                        speed_bps = size_diff / time_diff
-                                        speed = f"{speed_bps / 1024 / 1024:.1f} MB/s"
-
-                                DOWNLOAD_SPEEDS[repo] = {
-                                    "last_size": current_size,
-                                    "last_time": current_time
-                                }
+                                        if size_diff > 0:
+                                            speed_bps = size_diff / time_diff
+                                            speed = f"{speed_bps / 1024 / 1024:.1f} MB/s"
+                                        DOWNLOAD_SPEEDS[repo] = {
+                                            "last_size": current_size,
+                                            "last_time": current_time,
+                                            "speed": speed
+                                        }
+                                    else:
+                                        # Use cached speed if time diff too small
+                                        speed = prev.get("speed", "0 MB/s")
+                                else:
+                                    DOWNLOAD_SPEEDS[repo] = {
+                                        "last_size": current_size,
+                                        "last_time": current_time,
+                                        "speed": "0 MB/s"
+                                    }
 
                                 progress = 0
                                 if total_size > 0:
