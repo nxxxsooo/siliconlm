@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Localboard</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .status-dot { width: 12px; height: 12px; border-radius: 50%; }
@@ -195,7 +196,7 @@
                 const totalGB = d.total_size ? (d.total_size / 1024 / 1024 / 1024).toFixed(2) : '?';
                 const progress = d.progress || 0;
                 const progressText = d.total_size ? `${currentMB} / ${totalMB} MB (${progress}%)` : `${currentGB} GB downloaded`;
-                const isExternal = d.status === 'external';
+                const isExternal = d.status === 'external' || d.status === 'incomplete';
 
                 return `
                 <div class="bg-gray-800 rounded-lg p-3 ${isExternal ? 'border border-purple-500/30' : ''}">
@@ -206,7 +207,8 @@
                                               d.status === 'stopped' ? 'text-yellow-400' :
                                               d.status === 'external' ? 'text-purple-400' : 'text-blue-400'}">
                             ${d.status === 'downloading' ? 'Downloading...' :
-                              d.status === 'external' ? 'External download' : d.status}
+                              d.status === 'external' ? 'External download' :
+                              d.status === 'incomplete' ? 'Incomplete' : d.status}
                         </span>
                     </div>
                     <div class="text-xs text-gray-400 mb-2">${progressText}</div>

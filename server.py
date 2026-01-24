@@ -11,10 +11,16 @@ from typing import Optional
 
 import psutil
 from fastapi import FastAPI, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI(title="Localboard")
+
+# Static files
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Configuration
 MODELS_DIR = Path.home() / ".lmstudio" / "models"
@@ -141,28 +147,48 @@ def get_downloaded_models() -> list:
 
 
 def detect_incomplete_downloads() -> list:
-    """Detect models that may be downloading externally"""
+    """Detect models that are actually incomplete (missing expected files)"""
     incomplete = []
     if MODELS_DIR.exists():
         for org_dir in MODELS_DIR.iterdir():
-            if org_dir.is_dir():
+            if org_dir.is_dir() and not org_dir.name.startswith('.'):
                 for model_dir in org_dir.iterdir():
-                    if model_dir.is_dir():
+                    if model_dir.is_dir() and not model_dir.name.startswith('.'):
                         repo = f"{org_dir.name}/{model_dir.name}"
                         # Skip if already tracked in DOWNLOADS
                         if any(d.get("repo") == repo for d in DOWNLOADS.values()):
                             continue
-                        # Check for incomplete markers
-                        has_incomplete = any(model_dir.glob("*.incomplete")) or \
-                                        any(model_dir.glob(".huggingface/*"))
-                        if has_incomplete:
+
+                        # Check if model is incomplete by looking for missing parts
+                        safetensors = list(model_dir.glob("*.safetensors"))
+                        index_file = model_dir / "model.safetensors.index.json"
+
+                        # If has index file, check if all parts exist
+                        is_incomplete = False
+                        if index_file.exists():
+                            try:
+                                import json
+                                with open(index_file) as f:
+                                    index = json.load(f)
+                                weight_map = index.get("weight_map", {})
+                                expected_files = set(weight_map.values())
+                                existing_files = {f.name for f in safetensors}
+                                if expected_files - existing_files:
+                                    is_incomplete = True
+                            except:
+                                pass
+                        # Also check for .incomplete files
+                        elif list(model_dir.glob("*.incomplete")):
+                            is_incomplete = True
+
+                        if is_incomplete:
                             try:
                                 size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
                                 incomplete.append({
                                     "repo": repo,
                                     "current_size": size,
                                     "path": str(model_dir),
-                                    "status": "external"
+                                    "status": "incomplete"
                                 })
                             except:
                                 pass
@@ -194,7 +220,7 @@ async def get_status():
 
 @app.post("/api/service/{name}/start")
 async def start_service(name: str):
-    """Start a service"""
+    """Start a service in new Terminal window"""
     service = SERVICES.get(name)
     if not service:
         return {"success": False, "message": "Unknown service"}
@@ -203,40 +229,57 @@ async def start_service(name: str):
         return {"success": False, "message": service.get("note", "Cannot start this service")}
 
     try:
-        if service.get("start_in_terminal"):
-            # Open in new Terminal window
-            cmd = service["start_cmd"][0]
-            subprocess.Popen([
-                "osascript", "-e",
-                f'tell application "Terminal" to do script "{cmd}"'
-            ])
-        else:
-            subprocess.Popen(service["start_cmd"], start_new_session=True)
-        return {"success": True, "message": f"Starting {name}"}
+        cmd = service["start_cmd"][0]
+        # Open in new Terminal tab
+        script = f'''
+        tell application "Terminal"
+            activate
+            do script "{cmd}"
+        end tell
+        '''
+        subprocess.run(["osascript", "-e", script], check=True)
+        return {"success": True, "message": f"Starting {name} in Terminal"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
 @app.post("/api/service/{name}/stop")
 async def stop_service(name: str):
-    """Stop a service"""
-    status = get_service_status(name)
-    if status["pid"]:
+    """Stop a service by killing all matching processes"""
+    service = SERVICES.get(name)
+    if not service:
+        return {"success": False, "message": "Unknown service"}
+
+    process_name = service.get("process", name)
+    killed = []
+
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
-            os.kill(status["pid"], signal.SIGTERM)
-            return {"success": True, "message": f"Sent SIGTERM to {name}"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    return {"success": False, "message": "Service not running or PID not found"}
+            cmdline = proc.info.get('cmdline') or []
+            proc_name = proc.info.get('name', '')
+            # Match process name or command line
+            if process_name in proc_name or any(process_name in arg for arg in cmdline):
+                proc.terminate()
+                killed.append(proc.info['pid'])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    if killed:
+        return {"success": True, "message": f"Stopped PIDs: {killed}"}
+    return {"success": False, "message": "No matching process found"}
 
 
 @app.post("/api/service/{name}/restart")
 async def restart_service(name: str):
     """Restart a service"""
-    await stop_service(name)
+    stop_result = await stop_service(name)
     import asyncio
-    await asyncio.sleep(1)
-    return await start_service(name)
+    await asyncio.sleep(2)  # Wait for process to fully terminate
+    start_result = await start_service(name)
+    return {
+        "success": start_result.get("success", False),
+        "message": f"Stop: {stop_result.get('message')} | Start: {start_result.get('message')}"
+    }
 
 
 @app.post("/api/model/reveal")
