@@ -42,11 +42,21 @@
         <div class="grid grid-cols-3 gap-4 mb-6" id="services-container"></div>
 
         <!-- Downloads -->
-        <h2 class="text-xl font-semibold mb-3">Downloads</h2>
+        <h2 class="text-xl font-semibold mb-3 flex items-center gap-2">
+            Downloads
+            <a href="https://huggingface.co/mlx-community" target="_blank"
+               class="text-sm text-blue-400 hover:text-blue-300 font-normal">
+                Browse mlx-community →
+            </a>
+        </h2>
         <div class="bg-gray-800 rounded-lg p-4 mb-4">
-            <div class="flex gap-2 mb-3">
-                <input type="text" id="download-input" placeholder="mlx-community/model-name"
-                       class="flex-1 bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <div class="flex gap-2 mb-3 relative">
+                <div class="flex-1 relative">
+                    <input type="text" id="download-input" placeholder="mlx-community/model-name"
+                           oninput="filterPresets(this.value)" onfocus="showSuggestions()" onblur="hideSuggestions()"
+                           class="w-full bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div id="suggestions" class="absolute z-10 w-full bg-gray-700 rounded mt-1 max-h-48 overflow-y-auto hidden"></div>
+                </div>
                 <button onclick="startDownload()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
                     Download
                 </button>
@@ -120,15 +130,56 @@
             `).join('');
         }
 
+        let allPresets = [];
+
         function renderPresets(presets) {
+            allPresets = presets;
             const container = document.getElementById('presets-container');
             container.innerHTML = presets.map(p => `
-                <button onclick="document.getElementById('download-input').value='${p.repo}'"
+                <button onclick="selectPreset('${p.repo}')"
                         class="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs"
                         title="${p.desc}">
                     ${p.repo.split('/')[1]}
                 </button>
             `).join('');
+        }
+
+        function selectPreset(repo) {
+            document.getElementById('download-input').value = repo;
+            hideSuggestions();
+        }
+
+        function filterPresets(query) {
+            const suggestions = document.getElementById('suggestions');
+            if (!query || query.length < 2) {
+                suggestions.classList.add('hidden');
+                return;
+            }
+            const q = query.toLowerCase();
+            const matches = allPresets.filter(p =>
+                p.repo.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)
+            );
+            if (matches.length > 0) {
+                suggestions.innerHTML = matches.map(p => `
+                    <div onmousedown="selectPreset('${p.repo}')"
+                         class="px-3 py-2 hover:bg-gray-600 cursor-pointer text-sm">
+                        <div class="font-medium">${p.repo}</div>
+                        <div class="text-xs text-gray-400">${p.desc}</div>
+                    </div>
+                `).join('');
+                suggestions.classList.remove('hidden');
+            } else {
+                suggestions.classList.add('hidden');
+            }
+        }
+
+        function showSuggestions() {
+            const input = document.getElementById('download-input');
+            if (input.value.length >= 2) filterPresets(input.value);
+        }
+
+        function hideSuggestions() {
+            setTimeout(() => document.getElementById('suggestions').classList.add('hidden'), 200);
         }
 
         function renderDownloads(downloads) {
