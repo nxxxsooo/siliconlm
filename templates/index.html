@@ -195,7 +195,9 @@
                 const totalMB = d.total_size ? (d.total_size / 1024 / 1024).toFixed(1) : '?';
                 const totalGB = d.total_size ? (d.total_size / 1024 / 1024 / 1024).toFixed(2) : '?';
                 const progress = d.progress || 0;
+                const speed = d.speed || '';
                 const progressText = d.total_size ? `${currentMB} / ${totalMB} MB (${progress}%)` : `${currentGB} GB downloaded`;
+                const speedText = speed && d.status === 'downloading' ? ` • ${speed}` : '';
                 const isExternal = d.status === 'external' || d.status === 'incomplete';
 
                 return `
@@ -211,7 +213,7 @@
                               d.status === 'incomplete' ? 'Incomplete' : d.status}
                         </span>
                     </div>
-                    <div class="text-xs text-gray-400 mb-2">${progressText}</div>
+                    <div class="text-xs text-gray-400 mb-2">${progressText}${speedText}</div>
                     <div class="bg-gray-700 rounded-full h-3 overflow-hidden mb-2">
                         <div class="bg-gradient-to-r ${isExternal ? 'from-purple-500 to-purple-400' : 'from-blue-500 to-blue-400'} h-full progress-bar transition-all duration-500"
                              style="width: ${progress || (isExternal ? 50 : 0)}%"></div>

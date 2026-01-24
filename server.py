@@ -340,17 +340,31 @@ def download_model(task_id: str, repo: str):
 
         # Start progress monitor thread
         stop_monitor = threading.Event()
+        last_size = [0]
+        last_time = [time.time()]
 
         def monitor_progress():
             while not stop_monitor.is_set():
                 try:
                     if local_dir.exists():
                         current_size = sum(f.stat().st_size for f in local_dir.rglob('*') if f.is_file())
+                        current_time = time.time()
+
+                        # Calculate speed
+                        time_diff = current_time - last_time[0]
+                        if time_diff > 0:
+                            size_diff = current_size - last_size[0]
+                            speed_bps = size_diff / time_diff
+                            speed_mbps = speed_bps / 1024 / 1024
+                            DOWNLOADS[task_id]["speed"] = f"{speed_mbps:.1f} MB/s"
+
+                        last_size[0] = current_size
+                        last_time[0] = current_time
+
                         DOWNLOADS[task_id]["current_size"] = current_size
                         if total_size > 0:
                             progress = min(99, int((current_size / total_size) * 100))
                             DOWNLOADS[task_id]["progress"] = progress
-                            DOWNLOADS[task_id]["speed"] = f"{current_size / 1024 / 1024:.1f} MB"
                 except:
                     pass
                 time.sleep(2)
