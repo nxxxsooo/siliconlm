@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiliconLM - Local LLM Dashboard for Apple Silicon</title>
+    <meta name="description" content="The ultimate local LLM dashboard optimized for Apple Silicon Macs. Monitor, manage, and run models with native performance.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="static/favicon.svg">
+    <style>
+        /* Custom Apple-like font stack fallback */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        /* Subtle gradient animation */
+        @keyframes blob {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob {
+            animation: blob 7s infinite;
+        }
+        .animation-delay-2000 {
+            animation-delay: 2s;
+        }
+        .animation-delay-4000 {
+            animation-delay: 4s;
+        }
+
+        /* Glassmorphism utilities */
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #09090b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #27272a; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46; 
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        apple: {
+                            dark: '#000000',
+                            gray: '#1d1d1f',
+                            blue: '#0071e3',
+                            text: '#f5f5f7',
+                            subtext: '#86868b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-black text-apple-text antialiased selection:bg-white/20 selection:text-white overflow-x-hidden">
+
+    <!-- Background Ambient Glow -->
+    <div class="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob"></div>
+        <div class="absolute top-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-2000"></div>
+        <div class="absolute -bottom-32 left-1/3 w-96 h-96 bg-indigo-500/10 rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-4000"></div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 top-0 transition-all duration-300 glass border-b-0 border-white/5">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <!-- Small Chip Icon -->
+                <svg class="w-6 h-6 text-white/90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="4" y="4" width="16" height="16" rx="4" />
+                    <path d="M9 9h6v6H9z" fill="currentColor" fill-opacity="0.2" />
+                    <path d="M12 2v2 M12 20v2 M2 12h2 M20 12h2 M7 2v2 M17 2v2 M7 20v2 M17 20v2 M2 7h2 M20 7h2 M2 17h2 M20 17h2" stroke-linecap="round" />
+                </svg>
+                <span class="font-semibold tracking-tight text-lg">SiliconLM</span>
+            </div>
+            <a href="https://github.com/nxxxsooo/localboard" target="_blank" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors flex items-center gap-2">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                GitHub
+            </a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <main class="relative z-10 pt-32 pb-20 px-6">
+        <div class="max-w-4xl mx-auto text-center">
+            
+            <!-- Animated Chip Visual -->
+            <div class="relative w-32 h-32 mx-auto mb-12 group cursor-default">
+                <div class="absolute inset-0 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-2xl blur-2xl opacity-20 group-hover:opacity-40 transition-opacity duration-500"></div>
+                <div class="relative w-full h-full bg-gradient-to-br from-zinc-800 to-black rounded-2xl border border-white/10 shadow-2xl flex items-center justify-center overflow-hidden">
+                    <!-- Circuit lines -->
+                    <div class="absolute inset-0 opacity-20">
+                        <svg class="w-full h-full" viewBox="0 0 100 100" fill="none" stroke="white" stroke-width="0.5">
+                            <path d="M10 10 h80 v80 h-80 z" />
+                            <path d="M50 10 v30 M50 60 v30 M10 50 h30 M60 50 h30" />
+                            <circle cx="50" cy="50" r="10" stroke-width="1" />
+                        </svg>
+                    </div>
+                    <!-- Logo Text -->
+                    <div class="relative z-10 font-bold text-3xl bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
+                        Si
+                    </div>
+                    <!-- Shine effect -->
+                    <div class="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                </div>
+            </div>
+
+            <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50">
+                Power at the Edge.
+            </h1>
+            <p class="text-xl md:text-2xl text-apple-subtext max-w-2xl mx-auto font-light leading-relaxed">
+                The native dashboard for running Local LLMs on Apple Silicon. <br class="hidden md:block">
+                Performance monitoring, model management, and inference in one place.
+            </p>
+
+            <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="#install" class="px-8 py-3 rounded-full bg-white text-black font-medium hover:bg-gray-200 transition-colors w-full sm:w-auto">
+                    Get Started
+                </a>
+                <a href="https://github.com/nxxxsooo/localboard" class="px-8 py-3 rounded-full glass hover:bg-white/10 transition-colors w-full sm:w-auto">
+                    View Source
+                </a>
+            </div>
+        </div>
+    </main>
+
+    <!-- Features Grid -->
+    <section class="relative z-10 py-20 px-6">
+        <div class="max-w-6xl mx-auto">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                
+                <!-- Feature 1 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6 text-blue-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Real-time Monitoring</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        Visualize NPU, GPU, and CPU usage instantly. Track memory pressure and thermal states optimized for M-series chips.
+                    </p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6 text-purple-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Model Management</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        Built-in aria2 downloader for high-speed model fetching. Organize GGUF files and manage storage effortlessly.
+                    </p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center mb-6 text-green-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Smart Presets</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        One-click configurations for Llama 3, Mistral, and Gemma. Optimized context windows and GPU layers for your specific RAM.
+                    </p>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center mb-6 text-orange-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Service Control</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        Start, stop, and restart llama.cpp server instances directly from the UI. View logs in real-time.
+                    </p>
+                </div>
+
+                <!-- Feature 5 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-6 text-pink-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Model Browser</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        Explore and discover new models. Filter by quantization, size, and compatibility with your hardware.
+                    </p>
+                </div>
+
+                <!-- Feature 6 -->
+                <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-6 text-indigo-400">
+                        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Native Speed</h3>
+                    <p class="text-apple-subtext leading-relaxed">
+                        Built on top of llama.cpp with Metal acceleration. Zero overhead, maximum tokens per second.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Install Section -->
+    <section id="install" class="relative z-10 py-20 px-6">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-3xl md:text-4xl font-bold text-center mb-12">Ready to run?</h2>
+            
+            <div class="glass rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+                <div class="flex items-center gap-2 px-4 py-3 bg-white/5 border-b border-white/5">
+                    <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                    <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                    <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+                    <div class="ml-2 text-xs text-white/40 font-mono">terminal — -zsh — 80x24</div>
+                </div>
+                <div class="p-6 md:p-8 font-mono text-sm md:text-base overflow-x-auto">
+                    <div class="flex gap-4 mb-2">
+                        <span class="text-green-400 select-none">$</span>
+                        <span class="text-white/90">git clone https://github.com/nxxxsooo/localboard.git</span>
+                    </div>
+                    <div class="flex gap-4 mb-2">
+                        <span class="text-green-400 select-none">$</span>
+                        <span class="text-white/90">cd localboard</span>
+                    </div>
+                    <div class="flex gap-4">
+                        <span class="text-green-400 select-none">$</span>
+                        <span class="text-white/90">./install.sh</span>
+                    </div>
+                </div>
+            </div>
+            
+            <p class="text-center mt-8 text-apple-subtext text-sm">
+                Requires macOS 14.0+ and Apple Silicon (M1/M2/M3)
+            </p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="relative z-10 py-12 px-6 border-t border-white/5 bg-black/50 backdrop-blur-xl">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-white/80">SiliconLM</span>
+                <span class="text-apple-subtext text-sm">© 2024</span>
+            </div>
+            
+            <div class="flex items-center gap-8 text-sm text-apple-subtext">
+                <a href="https://github.com/nxxxsooo/localboard" class="hover:text-white transition-colors">GitHub</a>
+                <a href="https://github.com/nxxxsooo/localboard/blob/main/LICENSE" class="hover:text-white transition-colors">MIT License</a>
+                <a href="https://github.com/nxxxsooo/localboard/issues" class="hover:text-white transition-colors">Report Issue</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
