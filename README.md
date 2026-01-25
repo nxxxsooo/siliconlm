@@ -18,7 +18,7 @@ Local LLM dashboard for Apple Silicon Macs. Manage models, services, and downloa
 ## Quick Start
 
 ```bash
-cd ~/Documents/sync/GitHub/localboard
+cd ~/Documents/sync/GitHub/siliconlm
 
 # Setup
 python3 -m venv .venv
@@ -37,7 +37,7 @@ open http://localhost:8765
 Add to `~/.zshrc`:
 
 ```bash
-alias slm='cd ~/Documents/sync/GitHub/localboard && nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & sleep 1 && open http://localhost:8765'
+alias slm='cd ~/Documents/sync/GitHub/siliconlm && nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & sleep 1 && open http://localhost:8765'
 ```
 
 ## aria2 Integration
