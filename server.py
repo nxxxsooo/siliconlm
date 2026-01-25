@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""Localboard - Local Services Dashboard"""
+"""SiliconLM - Apple Silicon LLM Dashboard"""
 
-import os
-import signal
 import socket
 import subprocess
-import uuid
+import time
 from pathlib import Path
 from typing import Optional
 
 import psutil
-from fastapi import FastAPI, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-app = FastAPI(title="Localboard")
+from download_manager import download_manager, PRESET_MODELS
+
+app = FastAPI(title="SiliconLM")
+
+# Cache for expensive computations
+_cache = {
+    "models": {"data": [], "total_size": 0, "timestamp": 0},
+}
+CACHE_TTL = 30  # seconds - only recalculate every 30s
+
+# Start download manager on app startup
+@app.on_event("startup")
+async def startup_event():
+    download_manager.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    download_manager.stop()
 
 # Static files
 STATIC_DIR = Path(__file__).parent / "static"
@@ -25,15 +40,14 @@ if STATIC_DIR.exists():
 # Configuration
 MODELS_DIR = Path.home() / ".lmstudio" / "models"
 DASHBOARD_DIR = Path(__file__).parent
-DOWNLOADS: dict = {}  # {task_id: {repo, progress, speed, status}}
 
-# Service definitions with start commands
+# Service definitions
 SERVICES = {
     "lmstudio": {
         "display": "LMStudio Server",
         "port": 1234,
         "check": "port",
-        "start_cmd": None,  # Started via LMStudio app
+        "start_cmd": None,
         "note": "Start from LMStudio app"
     },
     "opencode": {
@@ -51,20 +65,6 @@ SERVICES = {
         "start_in_terminal": True
     }
 }
-
-# Recommended models for download
-DOWNLOAD_PRESETS = [
-    {"repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit", "desc": "Fast MoE model (~17GB)"},
-    {"repo": "mlx-community/Qwen2.5-72B-Instruct-4bit", "desc": "Main workhorse (~41GB)"},
-    {"repo": "mlx-community/DeepSeek-R1-Distill-Llama-70B-4bit", "desc": "Deep thinking (~40GB)"},
-    {"repo": "mlx-community/mxbai-embed-large-v1", "desc": "Embedding model (~670MB)"},
-    {"repo": "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ", "desc": "Fast embedding (~350MB)"},
-    {"repo": "mlx-community/e5-mistral-7b-instruct-mlx", "desc": "Large embedding (~2.8GB)"},
-]
-
-# Track download processes and speeds
-DOWNLOAD_PROCESSES: dict = {}  # {task_id: Process}
-DOWNLOAD_SPEEDS: dict = {}  # {repo: {last_size, last_time, speed}}
 
 
 def check_port(port: int) -> bool:
@@ -109,130 +109,232 @@ def get_service_status(name: str) -> dict:
     return status
 
 
+def get_machine_info() -> dict:
+    """Get machine hardware info (cached)"""
+    if "machine" not in _cache:
+        try:
+            chip = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], 
+                                capture_output=True, text=True).stdout.strip()
+            
+            ram_bytes = int(subprocess.run(['sysctl', '-n', 'hw.memsize'], 
+                                          capture_output=True, text=True).stdout.strip())
+            ram_gb = ram_bytes // (1024**3)
+            
+            macos = subprocess.run(['sw_vers', '-productVersion'], 
+                                  capture_output=True, text=True).stdout.strip()
+            
+            cpu_cores = int(subprocess.run(['sysctl', '-n', 'hw.ncpu'], 
+                                          capture_output=True, text=True).stdout.strip())
+            
+            perf_cores = int(subprocess.run(['sysctl', '-n', 'hw.perflevel0.logicalcpu'], 
+                                           capture_output=True, text=True).stdout.strip() or 0)
+            eff_cores = int(subprocess.run(['sysctl', '-n', 'hw.perflevel1.logicalcpu'], 
+                                          capture_output=True, text=True).stdout.strip() or 0)
+            
+            gpu_cores = subprocess.run(['system_profiler', 'SPDisplaysDataType'], 
+                                       capture_output=True, text=True).stdout
+            gpu_core_count = ""
+            for line in gpu_cores.split('\n'):
+                if 'Total Number of Cores' in line:
+                    gpu_core_count = line.split(':')[-1].strip()
+                    break
+            
+            neural_cores = ""
+            for line in gpu_cores.split('\n'):
+                if 'Neural Engine' in line.lower():
+                    neural_cores = "16-core"
+                    break
+            
+            _cache["machine"] = {
+                "chip": chip,
+                "ram_gb": ram_gb,
+                "macos": macos,
+                "cpu_cores": cpu_cores,
+                "perf_cores": perf_cores,
+                "eff_cores": eff_cores,
+                "gpu_cores": gpu_core_count,
+                "neural_engine": neural_cores or "16-core",
+            }
+        except Exception:
+            _cache["machine"] = {
+                "chip": "Unknown",
+                "ram_gb": 0,
+                "macos": "Unknown",
+                "cpu_cores": 0,
+                "perf_cores": 0,
+                "eff_cores": 0,
+                "gpu_cores": "",
+                "neural_engine": "",
+            }
+    return _cache["machine"]
+
+
 def get_system_stats() -> dict:
     """Get system memory and disk stats"""
     mem = psutil.virtual_memory()
 
     if MODELS_DIR.exists():
         disk = psutil.disk_usage(str(MODELS_DIR))
-        models_size = sum(f.stat().st_size for f in MODELS_DIR.rglob('*') if f.is_file())
     else:
         disk = psutil.disk_usage('/')
-        models_size = 0
+
+    # Use cached models_size
+    _refresh_models_cache_if_needed()
+    models_size = _cache["models"]["total_size"]
 
     return {
         "memory": {"total": mem.total, "used": mem.used, "percent": mem.percent},
         "disk": {"total": disk.total, "used": disk.used, "free": disk.free, "percent": disk.percent},
-        "models_size": models_size
+        "models_size": models_size,
+        "machine": get_machine_info()
     }
 
 
-def get_downloaded_models() -> list:
-    """List downloaded models (only existing ones)"""
+def _refresh_models_cache_if_needed(force: bool = False):
+    """Refresh models cache if TTL expired or forced"""
+    now = time.time()
+    if not force and now - _cache["models"]["timestamp"] < CACHE_TTL:
+        return
+    
     models = []
+    total_size = 0
     if MODELS_DIR.exists():
         for org_dir in MODELS_DIR.iterdir():
-            if org_dir.is_dir():
+            if org_dir.is_dir() and not org_dir.name.startswith('.'):
                 for model_dir in org_dir.iterdir():
-                    if model_dir.is_dir() and model_dir.exists():
+                    if model_dir.is_dir() and not model_dir.name.startswith('.'):
                         try:
                             size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                            total_size += size
                             models.append({
                                 "name": f"{org_dir.name}/{model_dir.name}",
                                 "size": size,
                                 "path": str(model_dir)
                             })
                         except (OSError, FileNotFoundError):
-                            pass  # Skip if deleted
-    return sorted(models, key=lambda x: x['size'], reverse=True)
+                            pass
+    
+    _cache["models"]["data"] = sorted(models, key=lambda x: x['size'], reverse=True)
+    _cache["models"]["total_size"] = total_size
+    _cache["models"]["timestamp"] = now
 
 
-def detect_incomplete_downloads() -> list:
-    """Detect models that are actually incomplete (missing expected files)"""
+def invalidate_models_cache():
+    """Force cache refresh on next request"""
+    _cache["models"]["timestamp"] = 0
+
+
+def get_downloaded_models() -> list:
+    """List downloaded models (cached)"""
+    _refresh_models_cache_if_needed()
+    return _cache["models"]["data"]
+
+
+# Track download speeds
+DOWNLOAD_HISTORY: dict = {}  # {repo: [(time, size), ...]}
+
+
+def detect_active_downloads() -> list:
+    """Detect external downloads (not managed by DownloadManager)"""
     import time
-    incomplete = []
-    if MODELS_DIR.exists():
-        for org_dir in MODELS_DIR.iterdir():
-            if org_dir.is_dir() and not org_dir.name.startswith('.'):
-                for model_dir in org_dir.iterdir():
-                    if model_dir.is_dir() and not model_dir.name.startswith('.'):
-                        repo = f"{org_dir.name}/{model_dir.name}"
-                        # Skip if already tracked in DOWNLOADS
-                        if any(d.get("repo") == repo for d in DOWNLOADS.values()):
-                            continue
+    import json
+    downloads = []
 
-                        # Check if model is incomplete by looking for missing parts
-                        safetensors = list(model_dir.glob("*.safetensors"))
-                        index_file = model_dir / "model.safetensors.index.json"
+    if not MODELS_DIR.exists():
+        return downloads
 
-                        # If has index file, check if all parts exist
-                        is_incomplete = False
-                        total_size = 0
-                        if index_file.exists():
-                            try:
-                                import json
-                                with open(index_file) as f:
-                                    index = json.load(f)
-                                weight_map = index.get("weight_map", {})
-                                expected_files = set(weight_map.values())
-                                existing_files = {f.name for f in safetensors}
-                                if expected_files - existing_files:
-                                    is_incomplete = True
-                                # Estimate total size (rough: ~5GB per shard for 4bit)
-                                total_size = len(expected_files) * 5 * 1024 * 1024 * 1024
-                            except:
-                                pass
-                        # Also check for .incomplete files
-                        elif list(model_dir.glob("*.incomplete")):
-                            is_incomplete = True
+    # Get repos managed by download_manager to exclude them
+    managed_repos = set()
+    dm_status = download_manager.get_status()
+    for t in dm_status.get("active", []):
+        managed_repos.add(t["repo_id"])
+    for t in dm_status.get("queue", []):
+        managed_repos.add(t["repo_id"])
 
-                        if is_incomplete:
-                            try:
-                                # Include .cache directory in size calculation (HF downloads there first)
-                                current_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
-                                current_time = time.time()
+    for org_dir in MODELS_DIR.iterdir():
+        if not org_dir.is_dir() or org_dir.name.startswith('.'):
+            continue
+        for model_dir in org_dir.iterdir():
+            if not model_dir.is_dir() or model_dir.name.startswith('.'):
+                continue
+            if '_archived_' in model_dir.name:
+                continue
 
-                                # Calculate speed with smoothing
-                                speed = "0 MB/s"
-                                if repo in DOWNLOAD_SPEEDS:
-                                    prev = DOWNLOAD_SPEEDS[repo]
-                                    time_diff = current_time - prev["last_time"]
-                                    if time_diff >= 1:  # At least 1 second
-                                        size_diff = current_size - prev["last_size"]
-                                        if size_diff > 0:
-                                            speed_bps = size_diff / time_diff
-                                            speed = f"{speed_bps / 1024 / 1024:.1f} MB/s"
-                                        DOWNLOAD_SPEEDS[repo] = {
-                                            "last_size": current_size,
-                                            "last_time": current_time,
-                                            "speed": speed
-                                        }
-                                    else:
-                                        # Use cached speed if time diff too small
-                                        speed = prev.get("speed", "0 MB/s")
-                                else:
-                                    DOWNLOAD_SPEEDS[repo] = {
-                                        "last_size": current_size,
-                                        "last_time": current_time,
-                                        "speed": "0 MB/s"
-                                    }
+            repo = f"{org_dir.name}/{model_dir.name}"
+            
+            # Skip if managed by DownloadManager
+            if repo in managed_repos:
+                continue
 
-                                progress = 0
-                                if total_size > 0:
-                                    progress = min(99, int((current_size / total_size) * 100))
+            # Only check models with .incomplete files (active HF downloads)
+            incomplete_files = list(model_dir.rglob('*.incomplete'))
+            if not incomplete_files:
+                # Clean up history for completed downloads
+                if repo in DOWNLOAD_HISTORY:
+                    del DOWNLOAD_HISTORY[repo]
+                continue
 
-                                incomplete.append({
-                                    "repo": repo,
-                                    "current_size": current_size,
-                                    "total_size": total_size if total_size > 0 else None,
-                                    "progress": progress,
-                                    "speed": speed,
-                                    "path": str(model_dir),
-                                    "status": "incomplete"
-                                })
-                            except:
-                                pass
-    return incomplete
+            try:
+                # Calculate sizes - actual disk usage for speed, apparent for progress
+                files = [f for f in model_dir.rglob('*') if f.is_file()]
+                actual_size = sum(f.stat().st_blocks * 512 for f in files)  # Actual disk usage
+                apparent_size = sum(f.stat().st_size for f in files)  # For progress calc
+                current_size = actual_size  # Use actual for speed tracking
+                current_time = time.time()
+
+                # Initialize history
+                if repo not in DOWNLOAD_HISTORY:
+                    DOWNLOAD_HISTORY[repo] = []
+
+                history = DOWNLOAD_HISTORY[repo]
+                history.append((current_time, current_size))
+
+                # Keep only last 15 seconds of history
+                history = [(t, s) for t, s in history if current_time - t < 15]
+                DOWNLOAD_HISTORY[repo] = history
+
+                # Calculate speed - only if size changed
+                speed = 0
+                is_active = False
+                if len(history) >= 2:
+                    oldest = history[0]
+                    time_diff = current_time - oldest[0]
+                    size_diff = current_size - oldest[1]
+                    if time_diff > 0 and size_diff > 0:
+                        speed = size_diff / time_diff
+                        is_active = True
+
+                # Skip if not actively downloading (no size change in 15s)
+                if not is_active and len(history) >= 3:
+                    continue
+
+                # Get expected total from index file
+                total_size = 0
+                index_file = model_dir / "model.safetensors.index.json"
+                if index_file.exists():
+                    with open(index_file) as f:
+                        index = json.load(f)
+                    weight_map = index.get("weight_map", {})
+                    num_shards = len(set(weight_map.values()))
+                    # Estimate ~4.5GB per shard for 4bit models
+                    total_size = num_shards * 4.5 * 1024 * 1024 * 1024
+
+                progress = 0
+                if total_size > 0:
+                    progress = min(99, int((apparent_size / total_size) * 100))
+
+                downloads.append({
+                    "repo": repo,
+                    "current_size": apparent_size,  # Show apparent size to user
+                    "total_size": total_size if total_size > 0 else None,
+                    "progress": progress,
+                    "speed": speed,
+                    "path": str(model_dir)
+                })
+            except Exception:
+                pass
+
+    return downloads
 
 
 # API Routes
@@ -247,14 +349,11 @@ async def index():
 async def get_status():
     """Get all service statuses and system stats"""
     services = [get_service_status(name) for name in SERVICES]
-    # Combine tracked downloads with detected external downloads
-    all_downloads = list(DOWNLOADS.values()) + detect_incomplete_downloads()
     return {
         "services": services,
         "system": get_system_stats(),
         "models": get_downloaded_models(),
-        "downloads": all_downloads,
-        "presets": DOWNLOAD_PRESETS
+        "downloads": detect_active_downloads()
     }
 
 
@@ -270,7 +369,6 @@ async def start_service(name: str):
 
     try:
         cmd = service["start_cmd"][0]
-        # Open in new Terminal tab
         script = f'''
         tell application "Terminal"
             activate
@@ -297,7 +395,6 @@ async def stop_service(name: str):
         try:
             cmdline = proc.info.get('cmdline') or []
             proc_name = proc.info.get('name', '')
-            # Match process name or command line
             if process_name in proc_name or any(process_name in arg for arg in cmdline):
                 proc.terminate()
                 killed.append(proc.info['pid'])
@@ -314,7 +411,7 @@ async def restart_service(name: str):
     """Restart a service"""
     stop_result = await stop_service(name)
     import asyncio
-    await asyncio.sleep(2)  # Wait for process to fully terminate
+    await asyncio.sleep(2)
     start_result = await start_service(name)
     return {
         "success": start_result.get("success", False),
@@ -332,154 +429,76 @@ async def reveal_model(path: str):
     return {"success": False, "message": "Path not found"}
 
 
-class DownloadRequest(BaseModel):
-    repo: str
-
-
-@app.post("/api/download")
-async def start_download(request: DownloadRequest, background_tasks: BackgroundTasks):
-    """Start a HuggingFace model download"""
-    repo = request.repo
-    task_id = str(uuid.uuid4())[:8]
-    local_dir = MODELS_DIR / repo
-
-    DOWNLOADS[task_id] = {
-        "id": task_id,
-        "repo": repo,
-        "progress": 0,
-        "status": "starting",
-        "speed": "0 MB/s",
-        "path": str(local_dir)
-    }
-
-    background_tasks.add_task(download_model, task_id, repo)
-    return {"success": True, "task_id": task_id}
-
-
-def download_model(task_id: str, repo: str):
-    """Background task to download a model with progress tracking"""
-    import threading
-    import time
+@app.delete("/api/model")
+async def delete_model(path: str):
+    """Delete a downloaded model"""
+    import shutil
+    model_path = Path(path)
+    
+    # Security: ensure path is under MODELS_DIR
     try:
-        DOWNLOADS[task_id]["status"] = "downloading"
-        DOWNLOADS[task_id]["thread_id"] = threading.current_thread().ident
-
-        from huggingface_hub import snapshot_download, HfApi
-
-        local_dir = MODELS_DIR / repo
-
-        # Get total size from HuggingFace
-        try:
-            api = HfApi()
-            repo_info = api.repo_info(repo)
-            total_size = sum(s.size for s in repo_info.siblings if s.size)
-            DOWNLOADS[task_id]["total_size"] = total_size
-        except:
-            total_size = 0
-            DOWNLOADS[task_id]["total_size"] = 0
-
-        # Start progress monitor thread
-        stop_monitor = threading.Event()
-        last_size = [0]
-        last_time = [time.time()]
-
-        def monitor_progress():
-            while not stop_monitor.is_set():
-                try:
-                    if local_dir.exists():
-                        current_size = sum(f.stat().st_size for f in local_dir.rglob('*') if f.is_file())
-                        current_time = time.time()
-
-                        # Calculate speed
-                        time_diff = current_time - last_time[0]
-                        if time_diff > 0:
-                            size_diff = current_size - last_size[0]
-                            speed_bps = size_diff / time_diff
-                            speed_mbps = speed_bps / 1024 / 1024
-                            DOWNLOADS[task_id]["speed"] = f"{speed_mbps:.1f} MB/s"
-
-                        last_size[0] = current_size
-                        last_time[0] = current_time
-
-                        DOWNLOADS[task_id]["current_size"] = current_size
-                        if total_size > 0:
-                            progress = min(99, int((current_size / total_size) * 100))
-                            DOWNLOADS[task_id]["progress"] = progress
-                except:
-                    pass
-                time.sleep(2)
-
-        monitor_thread = threading.Thread(target=monitor_progress, daemon=True)
-        monitor_thread.start()
-
-        # Download with resume support
-        snapshot_download(
-            repo,
-            local_dir=str(local_dir),
-            local_dir_use_symlinks=False,
-            resume_download=True
-        )
-
-        stop_monitor.set()
-        DOWNLOADS[task_id]["status"] = "completed"
-        DOWNLOADS[task_id]["progress"] = 100
-        if total_size > 0:
-            DOWNLOADS[task_id]["current_size"] = total_size
-
+        model_path.resolve().relative_to(MODELS_DIR.resolve())
+    except ValueError:
+        return {"success": False, "message": "Invalid path"}
+    
+    if not model_path.exists():
+        return {"success": False, "message": "Model not found"}
+    
+    try:
+        shutil.rmtree(model_path)
+        invalidate_models_cache()
+        return {"success": True, "message": f"Deleted {model_path.name}"}
     except Exception as e:
-        stop_monitor.set() if 'stop_monitor' in dir() else None
-        if "cancelled" not in str(e).lower() and task_id in DOWNLOADS:
-            DOWNLOADS[task_id]["status"] = "error"
-            DOWNLOADS[task_id]["error"] = str(e)
+        return {"success": False, "message": str(e)}
 
 
-@app.post("/api/download/{task_id}/reveal")
-async def reveal_download(task_id: str):
-    """Show downloading model in Finder"""
-    if task_id in DOWNLOADS:
-        path = DOWNLOADS[task_id].get("path")
-        if path:
-            model_path = Path(path)
-            if model_path.exists():
-                subprocess.run(["open", "-R", str(model_path)])
-                return {"success": True}
-            else:
-                # Show parent directory
-                subprocess.run(["open", str(MODELS_DIR)])
-                return {"success": True}
-    return {"success": False, "message": "Download not found"}
+# Download Management API
+class DownloadRequest(BaseModel):
+    repo_id: str
 
 
-@app.post("/api/download/{task_id}/stop")
-async def stop_download(task_id: str):
-    """Stop a download (can be resumed later)"""
-    if task_id in DOWNLOADS:
-        DOWNLOADS[task_id]["status"] = "stopped"
-        return {"success": True}
-    return {"success": False, "message": "Download not found"}
+@app.get("/api/downloads")
+async def get_downloads():
+    """Get download queue status and presets"""
+    return download_manager.get_status()
 
 
-@app.post("/api/download/{task_id}/resume")
-async def resume_download(task_id: str, background_tasks: BackgroundTasks):
-    """Resume a stopped download"""
-    if task_id in DOWNLOADS and DOWNLOADS[task_id]["status"] == "stopped":
-        repo = DOWNLOADS[task_id]["repo"]
-        background_tasks.add_task(download_model, task_id, repo)
-        return {"success": True}
-    return {"success": False, "message": "Cannot resume this download"}
+@app.post("/api/download/start")
+async def start_download(req: DownloadRequest):
+    """Add a model to download queue"""
+    task = download_manager.add_download(req.repo_id)
+    return {"success": True, "task": task.to_dict()}
 
 
-@app.delete("/api/download/{task_id}")
-async def remove_download(task_id: str):
-    """Remove download from list and optionally delete partial files"""
-    if task_id in DOWNLOADS:
-        path = DOWNLOADS[task_id].get("path")
-        del DOWNLOADS[task_id]
-        return {"success": True}
-    return {"success": False, "message": "Download not found"}
+@app.post("/api/download/pause")
+async def pause_download(req: DownloadRequest):
+    """Pause current download"""
+    success = download_manager.pause_download(req.repo_id)
+    return {"success": success}
+
+
+@app.post("/api/download/resume")
+async def resume_download(req: DownloadRequest):
+    """Resume paused download"""
+    success = download_manager.resume_download(req.repo_id)
+    return {"success": success}
+
+
+@app.post("/api/download/cancel")
+async def cancel_download(req: DownloadRequest):
+    """Cancel download and optionally delete files"""
+    success = download_manager.remove_download(req.repo_id, delete_files=False)
+    return {"success": success}
+
+
+@app.post("/api/download/delete")
+async def delete_download(req: DownloadRequest):
+    """Cancel download and delete files"""
+    success = download_manager.remove_download(req.repo_id, delete_files=True)
+    return {"success": success}
 
 
 if __name__ == "__main__":
     import uvicorn
-    print("🖥️  Localboard starting at http://localhost:8765")
+    print("🍎 SiliconLM starting at http://localhost:8765")
     uvicorn.run(app, host="0.0.0.0", port=8765)

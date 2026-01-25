@@ -3,127 +3,226 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Localboard</title>
+    <title>SiliconLM</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 900: '#0d1117', 800: '#161b22', 700: '#21262d', 600: '#30363d' },
+                        accent: { DEFAULT: '#58a6ff', dim: '#388bfd' }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        .status-dot { width: 12px; height: 12px; border-radius: 50%; }
-        .status-running { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
-        .status-stopped { background: #6b7280; }
-        .progress-bar { transition: width 0.3s ease; }
+        body { background: linear-gradient(135deg, #0d1117 0%, #161b22 100%); }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .status-running { background: #3fb950; box-shadow: 0 0 8px #3fb95080; }
+        .status-stopped { background: #484f58; }
+        .card { background: rgba(22, 27, 34, 0.8); backdrop-filter: blur(10px); border: 1px solid #30363d; }
+        .card:hover { border-color: #484f58; }
+        .btn-primary { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); }
+        .btn-primary:hover { background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%); }
+        .progress-bar { background: linear-gradient(90deg, #58a6ff 0%, #a371f7 100%); }
+        
+        /* Toast */
+        #toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 50; display: flex; flex-direction: column; gap: 0.5rem; }
+        .toast { padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; animation: slideIn 0.2s ease-out; max-width: 320px; backdrop-filter: blur(10px); }
+        .toast-success { background: rgba(35, 134, 54, 0.9); color: #aff5b4; border: 1px solid #238636; }
+        .toast-error { background: rgba(218, 54, 51, 0.9); color: #ffa198; border: 1px solid #da3633; }
+        .toast-info { background: rgba(56, 139, 253, 0.9); color: #a5d6ff; border: 1px solid #388bfd; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
+        /* Category badges */
+        .badge { font-size: 0.65rem; padding: 0.125rem 0.375rem; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .badge-coding { background: #388bfd30; color: #58a6ff; }
+        .badge-general { background: #a371f730; color: #a371f7; }
+        .badge-embedding { background: #3fb95030; color: #3fb950; }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 min-h-screen p-6">
-    <div class="max-w-6xl mx-auto">
-        <h1 class="text-3xl font-bold mb-6 flex items-center gap-3">
-            <span>Localboard</span>
-            <span id="refresh-indicator" class="text-sm text-gray-500"></span>
-        </h1>
+<body class="text-gray-200 min-h-screen p-4 md:p-6">
+    <div id="toast-container"></div>
+    <div class="max-w-5xl mx-auto">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold text-white">SiliconLM</h1>
+            <span id="refresh-indicator" class="text-xs text-gray-500"></span>
+        </div>
 
         <!-- System Stats -->
-        <div class="grid grid-cols-3 gap-4 mb-6">
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Memory</div>
-                <div class="text-2xl font-bold" id="mem-percent">--%</div>
-                <div class="text-sm text-gray-500" id="mem-detail"></div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div class="card rounded-xl p-3">
+                <div class="text-xs text-gray-500 mb-1">Chip</div>
+                <div class="text-sm font-semibold text-white truncate" id="machine-chip">--</div>
+                <div class="text-xs text-gray-500" id="machine-cores">--</div>
             </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Disk</div>
-                <div class="text-2xl font-bold" id="disk-percent">--%</div>
-                <div class="text-sm text-gray-500" id="disk-detail"></div>
+            <div class="card rounded-xl p-3">
+                <div class="text-xs text-gray-500 mb-1">GPU</div>
+                <div class="text-sm font-semibold text-white" id="machine-gpu">--</div>
+                <div class="text-xs text-gray-500" id="machine-neural">--</div>
             </div>
-            <div class="bg-gray-800 rounded-lg p-4">
-                <div class="text-gray-400 text-sm">Models Size</div>
-                <div class="text-2xl font-bold" id="models-size">-- GB</div>
+            <div class="card rounded-xl p-3">
+                <div class="text-xs text-gray-500 mb-1">RAM</div>
+                <div class="text-sm font-semibold text-white"><span id="machine-ram">--</span></div>
+                <div class="text-xs text-gray-500"><span id="mem-percent">--%</span> used</div>
+            </div>
+            <div class="card rounded-xl p-3">
+                <div class="text-xs text-gray-500 mb-1">Disk</div>
+                <div class="text-sm font-semibold text-white" id="disk-free">--</div>
+                <div class="text-xs text-gray-500"><span id="disk-percent">--%</span> used</div>
+            </div>
+            <div class="card rounded-xl p-3">
+                <div class="text-xs text-gray-500 mb-1">Models</div>
+                <div class="text-sm font-semibold text-white" id="models-size">--</div>
+                <div class="text-xs text-gray-500">macOS <span id="machine-os">--</span></div>
             </div>
         </div>
 
         <!-- Services -->
-        <h2 class="text-xl font-semibold mb-3">Services</h2>
-        <div class="grid grid-cols-3 gap-4 mb-6" id="services-container"></div>
-
-        <!-- Downloads -->
-        <h2 class="text-xl font-semibold mb-3 flex items-center gap-2">
-            Downloads
-            <a href="https://huggingface.co/mlx-community" target="_blank"
-               class="text-sm text-blue-400 hover:text-blue-300 font-normal">
-                Browse mlx-community →
-            </a>
-        </h2>
-        <div class="bg-gray-800 rounded-lg p-4 mb-4">
-            <div class="flex gap-2 mb-3 relative">
-                <div class="flex-1 relative">
-                    <input type="text" id="download-input" placeholder="mlx-community/model-name"
-                           oninput="filterPresets(this.value)" onfocus="showSuggestions()" onblur="hideSuggestions()"
-                           class="w-full bg-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <div id="suggestions" class="absolute z-10 w-full bg-gray-700 rounded mt-1 max-h-48 overflow-y-auto hidden"></div>
-                </div>
-                <button onclick="startDownload()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
-                    Download
-                </button>
-            </div>
-            <div class="flex flex-wrap gap-2" id="presets-container"></div>
+        <div class="mb-6">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Services</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="services-container"></div>
         </div>
-        <div id="downloads-container" class="space-y-2 mb-6"></div>
+
+        <!-- Download Models -->
+        <div class="mb-6">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Download Models</h2>
+            <div class="card rounded-xl p-4">
+                <div class="flex gap-2 mb-4">
+                    <div class="flex-1 relative">
+                        <input type="text" id="download-input" 
+                               placeholder="HuggingFace repo (e.g. mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)"
+                               class="w-full bg-dark-700 border border-dark-600 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 transition-all">
+                        <div id="suggestions" class="absolute top-full left-0 right-0 bg-dark-700 border border-dark-600 rounded-b-lg hidden z-10 max-h-48 overflow-y-auto"></div>
+                    </div>
+                    <button onclick="startDownload()" 
+                            class="btn-primary px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all">
+                        Download
+                    </button>
+                </div>
+                <div id="presets-container"></div>
+            </div>
+        </div>
+
+        <!-- Active Downloads -->
+        <div id="active-downloads-section" class="mb-6 hidden">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Downloading</h2>
+            <div id="active-downloads" class="space-y-3"></div>
+        </div>
+
+        <!-- Queue -->
+        <div id="queue-section" class="mb-6 hidden">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Queue</h2>
+            <div id="queue-container" class="space-y-2"></div>
+        </div>
+
+        <!-- External Downloads -->
+        <div id="downloads-section" class="mb-6 hidden">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">External Downloads</h2>
+            <div id="downloads-container" class="space-y-2"></div>
+        </div>
 
         <!-- Models -->
-        <h2 class="text-xl font-semibold mb-3">Downloaded Models</h2>
-        <div class="bg-gray-800 rounded-lg overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-700">
-                    <tr>
-                        <th class="text-left p-3">Model</th>
-                        <th class="text-right p-3">Size</th>
-                        <th class="text-right p-3">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="models-table"></tbody>
-            </table>
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">Downloaded Models</h2>
+                <span id="models-size" class="text-xs text-gray-500">-- GB total</span>
+            </div>
+            <div class="card rounded-xl overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-dark-700/50">
+                        <tr>
+                            <th class="text-left p-3 text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-300 select-none" onclick="sortModels('name')">
+                                MODEL <span id="sort-name" class="ml-1"></span>
+                            </th>
+                            <th class="text-right p-3 text-xs text-gray-500 font-medium cursor-pointer hover:text-gray-300 select-none" onclick="sortModels('size')">
+                                SIZE <span id="sort-size" class="ml-1">▼</span>
+                            </th>
+                            <th class="text-right p-3 text-xs text-gray-500 font-medium w-28">ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="models-table"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
     <script>
+        let presets = [];
+        let allModels = [];
+        let sortField = 'size';
+        let sortAsc = false;
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease-out forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+        
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
             const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function renderMachineInfo(machine) {
+            if (!machine) return;
+            document.getElementById('machine-chip').textContent = machine.chip || '--';
+            document.getElementById('machine-ram').textContent = machine.ram_gb ? `${machine.ram_gb}GB` : '--';
+            document.getElementById('machine-os').textContent = machine.macos || '--';
+            
+            const coreInfo = machine.perf_cores && machine.eff_cores 
+                ? `${machine.perf_cores}P + ${machine.eff_cores}E cores`
+                : machine.cpu_cores ? `${machine.cpu_cores} cores` : '--';
+            document.getElementById('machine-cores').textContent = coreInfo;
+            
+            document.getElementById('machine-gpu').textContent = machine.gpu_cores ? `${machine.gpu_cores} GPU` : '--';
+            document.getElementById('machine-neural').textContent = machine.neural_engine || '--';
         }
 
         function renderServices(services) {
             const container = document.getElementById('services-container');
             container.innerHTML = services.map(s => `
-                <div class="bg-gray-800 rounded-lg p-4">
-                    <div class="flex items-center gap-3 mb-3">
-                        <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
-                        <div>
-                            <div class="font-medium">${s.display}</div>
-                            <div class="text-sm text-gray-500">
-                                ${s.port ? 'Port ' + s.port : ''}
-                                ${s.pid ? 'PID ' + s.pid : ''}
-                                ${!s.running && s.note ? s.note : ''}
-                            </div>
+                <div class="card rounded-xl p-4 transition-all">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
+                            <span class="font-medium text-white">${s.display}</span>
                         </div>
+                        <span class="text-xs text-gray-500">
+                            ${s.port ? 'Port ' + s.port : ''}${s.pid ? 'PID ' + s.pid : ''}
+                        </span>
                     </div>
                     <div class="flex gap-2">
                         ${s.running ? `
                             <button onclick="serviceAction('${s.name}', 'stop')"
-                                    class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm flex-1">
+                                    class="flex-1 bg-red-900/50 hover:bg-red-900 text-red-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
                                 Stop
                             </button>
                             <button onclick="serviceAction('${s.name}', 'restart')"
-                                    class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-sm flex-1">
+                                    class="flex-1 bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
                                 Restart
                             </button>
                         ` : `
                             ${s.can_start ? `
                                 <button onclick="serviceAction('${s.name}', 'start')"
-                                        class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm flex-1">
+                                        class="flex-1 btn-primary px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all">
                                     Start
                                 </button>
                             ` : `
-                                <span class="text-gray-500 text-sm">Stopped</span>
+                                <span class="text-xs text-gray-500">${s.note || 'Stopped'}</span>
                             `}
                         `}
                     </div>
@@ -131,194 +230,308 @@
             `).join('');
         }
 
-        let allPresets = [];
-
-        function renderPresets(presets) {
-            allPresets = presets;
+        function renderPresets(presetsData, downloadedModels) {
+            presets = presetsData;
+            const downloadedNames = new Set(downloadedModels.map(m => m.name));
             const container = document.getElementById('presets-container');
-            container.innerHTML = presets.map(p => `
-                <button onclick="selectPreset('${p.repo}')"
-                        class="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs"
-                        title="${p.desc}">
-                    ${p.repo.split('/')[1]}
-                </button>
+            
+            // Group by category
+            const categories = {};
+            presetsData.forEach(p => {
+                const cat = p.category || 'general';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(p);
+            });
+            
+            const categoryLabels = {
+                coding: { label: 'Coding', class: 'badge-coding' },
+                general: { label: 'General', class: 'badge-general' },
+                embedding: { label: 'Embedding', class: 'badge-embedding' }
+            };
+            
+            let html = '';
+            for (const [cat, models] of Object.entries(categories)) {
+                const catInfo = categoryLabels[cat] || { label: cat, class: 'badge-general' };
+                html += `
+                    <div class="mb-3 last:mb-0">
+                        <span class="badge ${catInfo.class} mb-2 inline-block">${catInfo.label}</span>
+                        <div class="flex flex-wrap gap-2">
+                            ${models.map(p => {
+                                const isDownloaded = downloadedNames.has(p.repo);
+                                if (isDownloaded) {
+                                    return `
+                                        <button disabled class="bg-green-900/30 text-green-500 px-3 py-1.5 rounded-lg text-xs cursor-default border border-green-800/50">
+                                            <span class="mr-1">✓</span>${p.name}
+                                        </button>
+                                    `;
+                                }
+                                return `
+                                    <button onclick="downloadPreset('${p.repo}')"
+                                            class="bg-dark-700 hover:bg-dark-600 border border-dark-600 hover:border-dark-500 px-3 py-1.5 rounded-lg text-xs transition-all">
+                                        ${p.name} <span class="text-gray-500">${p.size}</span>
+                                    </button>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function renderActiveDownloads(activeList) {
+            const section = document.getElementById('active-downloads-section');
+            const container = document.getElementById('active-downloads');
+            
+            if (!activeList || activeList.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+            
+            section.classList.remove('hidden');
+            container.innerHTML = activeList.map(d => {
+                const speedMB = d.speed ? (d.speed / 1024 / 1024).toFixed(1) : '0';
+                const sizeMB = (d.current_size / 1024 / 1024).toFixed(0);
+                const totalMB = d.total_size ? (d.total_size / 1024 / 1024).toFixed(0) : '?';
+                
+                return `
+                <div class="card rounded-xl p-4 border-l-4 border-l-accent">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <div class="font-medium text-white">${d.model_name}</div>
+                            <div class="text-xs text-gray-500 font-mono">${d.repo_id}</div>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-400">${d.status}</span>
+                    </div>
+                    <div class="text-sm text-gray-400 mb-2">
+                        ${sizeMB} / ${totalMB} MB · <span class="text-accent">${speedMB} MB/s</span>
+                    </div>
+                    <div class="bg-dark-700 rounded-full h-1.5 overflow-hidden mb-3">
+                        <div class="progress-bar h-full transition-all duration-500" style="width: ${d.progress}%"></div>
+                    </div>
+                    <div class="flex gap-2">
+                        ${d.status === 'downloading' ? `
+                            <button onclick="downloadAction('${d.repo_id}', 'pause')"
+                                    class="bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 px-3 py-1 rounded-lg text-xs transition-all">Pause</button>
+                        ` : ''}
+                        <button onclick="downloadAction('${d.repo_id}', 'cancel')"
+                                class="bg-red-900/50 hover:bg-red-900 text-red-400 px-3 py-1 rounded-lg text-xs transition-all">Cancel</button>
+                        <button onclick="revealModel('${d.path}')"
+                                class="bg-dark-600 hover:bg-dark-500 px-3 py-1 rounded-lg text-xs transition-all">Finder</button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        function renderQueue(queue) {
+            const section = document.getElementById('queue-section');
+            const container = document.getElementById('queue-container');
+            
+            if (!queue || queue.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+            
+            section.classList.remove('hidden');
+            container.innerHTML = queue.map((task, index) => `
+                <div class="card rounded-xl p-3 flex justify-between items-center">
+                    <div>
+                        <span class="font-medium text-white">${task.model_name}</span>
+                        <span class="text-xs ml-2 ${task.status === 'paused' ? 'text-yellow-400' : 'text-gray-500'}">${task.status}</span>
+                    </div>
+                    <div class="flex gap-2">
+                        ${task.status === 'paused' ? `
+                            <button onclick="downloadAction('${task.repo_id}', 'resume')"
+                                    class="text-green-400 hover:text-green-300 text-xs">Resume</button>
+                        ` : ''}
+                        <button onclick="downloadAction('${task.repo_id}', 'cancel')"
+                                class="text-red-400 hover:text-red-300 text-xs">Remove</button>
+                    </div>
+                </div>
             `).join('');
         }
 
-        function selectPreset(repo) {
-            document.getElementById('download-input').value = repo;
-            hideSuggestions();
-        }
-
-        function filterPresets(query) {
-            const suggestions = document.getElementById('suggestions');
-            if (!query || query.length < 2) {
-                suggestions.classList.add('hidden');
-                return;
-            }
-            const q = query.toLowerCase();
-            const matches = allPresets.filter(p =>
-                p.repo.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)
-            );
-            if (matches.length > 0) {
-                suggestions.innerHTML = matches.map(p => `
-                    <div onmousedown="selectPreset('${p.repo}')"
-                         class="px-3 py-2 hover:bg-gray-600 cursor-pointer text-sm">
-                        <div class="font-medium">${p.repo}</div>
-                        <div class="text-xs text-gray-400">${p.desc}</div>
-                    </div>
-                `).join('');
-                suggestions.classList.remove('hidden');
-            } else {
-                suggestions.classList.add('hidden');
-            }
-        }
-
-        function showSuggestions() {
-            const input = document.getElementById('download-input');
-            if (input.value.length >= 2) filterPresets(input.value);
-        }
-
-        function hideSuggestions() {
-            setTimeout(() => document.getElementById('suggestions').classList.add('hidden'), 200);
-        }
-
         function renderDownloads(downloads) {
+            const section = document.getElementById('downloads-section');
             const container = document.getElementById('downloads-container');
+
             if (downloads.length === 0) {
-                container.innerHTML = '<div class="text-gray-500 text-sm">No active downloads</div>';
+                section.classList.add('hidden');
                 return;
             }
+
+            section.classList.remove('hidden');
             container.innerHTML = downloads.map(d => {
-                const currentMB = d.current_size ? (d.current_size / 1024 / 1024).toFixed(1) : '0';
-                const currentGB = d.current_size ? (d.current_size / 1024 / 1024 / 1024).toFixed(2) : '0';
-                const totalMB = d.total_size ? (d.total_size / 1024 / 1024).toFixed(1) : '?';
-                const totalGB = d.total_size ? (d.total_size / 1024 / 1024 / 1024).toFixed(2) : '?';
-                const progress = d.progress || 0;
-                const speed = d.speed || '';
-                const progressText = d.total_size ? `${currentMB} / ${totalMB} MB (${progress}%)` : `${currentGB} GB downloaded`;
-                const speedText = speed && (d.status === 'downloading' || d.status === 'incomplete') ? ` • ${speed}` : '';
-                const isExternal = d.status === 'external' || d.status === 'incomplete';
+                const currentGB = (d.current_size / 1024 / 1024 / 1024).toFixed(2);
+                const totalGB = d.total_size ? (d.total_size / 1024 / 1024 / 1024).toFixed(1) : '?';
+                const speedMB = d.speed ? (d.speed / 1024 / 1024).toFixed(1) : '0';
 
                 return `
-                <div class="bg-gray-800 rounded-lg p-3 ${isExternal ? 'border border-purple-500/30' : ''}">
+                <div class="card rounded-xl p-3 border-l-4 border-l-purple-500">
                     <div class="flex justify-between items-center mb-1">
-                        <span class="font-medium text-sm">${d.repo.split('/')[1]}</span>
-                        <span class="text-sm ${d.status === 'completed' ? 'text-green-400' :
-                                              d.status === 'error' ? 'text-red-400' :
-                                              d.status === 'stopped' ? 'text-yellow-400' :
-                                              d.status === 'external' ? 'text-purple-400' : 'text-blue-400'}">
-                            ${d.status === 'downloading' ? 'Downloading...' :
-                              d.status === 'external' ? 'External download' :
-                              d.status === 'incomplete' ? 'Incomplete' : d.status}
-                        </span>
+                        <span class="font-medium text-sm text-white">${d.repo.split('/')[1]}</span>
+                        <span class="text-xs text-purple-400">External</span>
                     </div>
-                    <div class="text-xs text-gray-400 mb-2">${progressText}${speedText}</div>
-                    <div class="bg-gray-700 rounded-full h-3 overflow-hidden mb-2">
-                        <div class="bg-gradient-to-r ${isExternal ? 'from-purple-500 to-purple-400' : 'from-blue-500 to-blue-400'} h-full progress-bar transition-all duration-500"
-                             style="width: ${progress || (isExternal ? 50 : 0)}%"></div>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <div class="flex gap-3 text-xs">
-                            <button onclick="revealPath('${d.path}')"
-                                    class="text-blue-400 hover:text-blue-300">📁 Finder</button>
-                            ${d.status === 'downloading' ? `
-                                <button onclick="downloadAction('${d.id}', 'stop')"
-                                        class="text-yellow-400 hover:text-yellow-300">⏸ Pause</button>
-                            ` : d.status === 'stopped' ? `
-                                <button onclick="downloadAction('${d.id}', 'resume')"
-                                        class="text-green-400 hover:text-green-300">▶ Resume</button>
-                            ` : ''}
-                            ${!isExternal && d.id ? `
-                                <button onclick="removeDownload('${d.id}')"
-                                        class="text-red-400 hover:text-red-300">✕ Remove</button>
-                            ` : ''}
-                        </div>
-                        ${d.total_size ? `<span class="text-xs text-gray-500">${totalGB} GB total</span>` : ''}
+                    <div class="text-xs text-gray-400 mb-2">${currentGB} / ${totalGB} GB · ${speedMB} MB/s</div>
+                    <div class="bg-dark-700 rounded-full h-1.5 overflow-hidden">
+                        <div class="bg-purple-500 h-full transition-all" style="width: ${d.progress}%"></div>
                     </div>
                 </div>
-            `}).join('');
+                `;
+            }).join('');
         }
 
-        async function revealPath(path) {
-            await fetch('/api/model/reveal?path=' + encodeURIComponent(path), { method: 'POST' });
-        }
-
-        function renderModels(models) {
+        function renderModels(models, skipStore = false) {
+            if (!skipStore) allModels = models;
+            
             const table = document.getElementById('models-table');
-            table.innerHTML = models.map(m => `
-                <tr class="border-t border-gray-700 hover:bg-gray-750">
-                    <td class="p-3 font-mono text-xs">${m.name}</td>
-                    <td class="p-3 text-right">${formatBytes(m.size)}</td>
+            if (models.length === 0) {
+                table.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-gray-500">No models downloaded</td></tr>';
+                return;
+            }
+            
+            const sorted = [...models].sort((a, b) => {
+                let cmp = sortField === 'name' ? a.name.localeCompare(b.name) : a.size - b.size;
+                return sortAsc ? cmp : -cmp;
+            });
+            
+            table.innerHTML = sorted.map(m => `
+                <tr class="border-t border-dark-600 hover:bg-dark-700/50 transition-colors">
+                    <td class="p-3 font-mono text-xs text-gray-300">${m.name}</td>
+                    <td class="p-3 text-right text-gray-400">${formatBytes(m.size)}</td>
                     <td class="p-3 text-right">
-                        <button onclick="revealModel('${m.path}')"
-                                class="text-blue-400 hover:text-blue-300 text-sm">
-                            Show in Finder
-                        </button>
+                        <button onclick="revealModel('${m.path}')" class="text-accent hover:text-accent-dim text-xs mr-2">Finder</button>
+                        <button onclick="deleteModel('${m.path}', '${m.name}')" class="text-red-400 hover:text-red-300 text-xs">Delete</button>
                     </td>
                 </tr>
             `).join('');
         }
+        
+        function sortModels(field) {
+            if (sortField === field) sortAsc = !sortAsc;
+            else { sortField = field; sortAsc = field === 'name'; }
+            document.getElementById('sort-name').textContent = sortField === 'name' ? (sortAsc ? '▲' : '▼') : '';
+            document.getElementById('sort-size').textContent = sortField === 'size' ? (sortAsc ? '▲' : '▼') : '';
+            renderModels(allModels, true);
+        }
 
         async function fetchStatus() {
             try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
+                const [statusRes, downloadsRes] = await Promise.all([
+                    fetch('/api/status'),
+                    fetch('/api/downloads')
+                ]);
+                const status = await statusRes.json();
+                const downloads = await downloadsRes.json();
 
-                document.getElementById('mem-percent').textContent = data.system.memory.percent + '%';
-                document.getElementById('mem-detail').textContent =
-                    `${formatBytes(data.system.memory.used)} / ${formatBytes(data.system.memory.total)}`;
-                document.getElementById('disk-percent').textContent = data.system.disk.percent + '%';
-                document.getElementById('disk-detail').textContent = `${formatBytes(data.system.disk.free)} free`;
-                document.getElementById('models-size').textContent = formatBytes(data.system.models_size);
+                renderMachineInfo(status.system?.machine);
+                
+                document.getElementById('mem-percent').textContent = status.system.memory.percent + '%';
+                document.getElementById('disk-percent').textContent = status.system.disk.percent + '%';
+                document.getElementById('disk-free').textContent = formatBytes(status.system.disk.free);
+                document.getElementById('models-size').textContent = formatBytes(status.system.models_size);
 
-                renderServices(data.services);
-                renderPresets(data.presets);
-                renderDownloads(data.downloads);
-                renderModels(data.models);
+                renderServices(status.services);
+                renderPresets(downloads.presets, status.models);
+                renderActiveDownloads(downloads.active || []);
+                renderQueue(downloads.queue);
+                renderDownloads(status.downloads || []);
+                renderModels(status.models);
 
-                document.getElementById('refresh-indicator').textContent =
-                    'Updated ' + new Date().toLocaleTimeString();
+                document.getElementById('refresh-indicator').textContent = new Date().toLocaleTimeString();
             } catch (e) {
-                console.error('Failed to fetch status:', e);
+                console.error('Fetch error:', e);
             }
         }
 
         async function serviceAction(name, action) {
-            await fetch(`/api/service/${name}/${action}`, { method: 'POST' });
+            const res = await fetch(`/api/service/${name}/${action}`, { method: 'POST' });
+            const data = await res.json();
+            showToast(`${action} ${name}: ${data.message || (data.success ? 'OK' : 'Failed')}`, data.success ? 'success' : 'error');
             setTimeout(fetchStatus, 500);
-        }
-
-        async function startDownload() {
-            const input = document.getElementById('download-input');
-            const repo = input.value.trim();
-            if (!repo) return;
-
-            await fetch('/api/download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repo })
-            });
-            input.value = '';
-            fetchStatus();
-        }
-
-        async function removeDownload(taskId) {
-            await fetch(`/api/download/${taskId}`, { method: 'DELETE' });
-            fetchStatus();
-        }
-
-        async function downloadAction(taskId, action) {
-            await fetch(`/api/download/${taskId}/${action}`, { method: 'POST' });
-            fetchStatus();
         }
 
         async function revealModel(path) {
             await fetch('/api/model/reveal?path=' + encodeURIComponent(path), { method: 'POST' });
         }
 
+        async function deleteModel(path, name) {
+            if (!confirm(`Delete "${name}"?\n\nThis will permanently remove all files.`)) return;
+            const res = await fetch('/api/model?path=' + encodeURIComponent(path), { method: 'DELETE' });
+            const data = await res.json();
+            showToast(data.success ? `Deleted ${name}` : 'Delete failed: ' + data.message, data.success ? 'success' : 'error');
+            if (data.success) fetchStatus();
+        }
+
+        async function startDownload() {
+            const input = document.getElementById('download-input');
+            const repoId = input.value.trim();
+            if (!repoId) return;
+            
+            const res = await fetch('/api/download/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId })
+            });
+            const data = await res.json();
+            input.value = '';
+            showToast(data.task?.status === 'completed' ? 'Already downloaded' : 'Added to queue', data.task?.status === 'completed' ? 'info' : 'success');
+            fetchStatus();
+        }
+
+        async function downloadPreset(repoId) {
+            const res = await fetch('/api/download/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId })
+            });
+            const data = await res.json();
+            const name = repoId.split('/').pop();
+            showToast(data.task?.status === 'completed' ? `${name} already downloaded` : `${name} added to queue`, data.task?.status === 'completed' ? 'info' : 'success');
+            fetchStatus();
+        }
+
+        async function downloadAction(repoId, action) {
+            const res = await fetch(`/api/download/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId })
+            });
+            const data = await res.json();
+            const msgs = { pause: 'Paused', resume: 'Resuming', cancel: 'Cancelled' };
+            showToast(`${msgs[action] || action} ${repoId.split('/').pop()}`, data.success ? 'success' : 'error');
+            fetchStatus();
+        }
+
+        // Suggestions
+        const input = document.getElementById('download-input');
+        const suggestions = document.getElementById('suggestions');
+        
+        input.addEventListener('input', () => {
+            const val = input.value.toLowerCase();
+            if (val.length < 2) { suggestions.classList.add('hidden'); return; }
+            
+            const matches = presets.filter(p => p.name.toLowerCase().includes(val) || p.repo.toLowerCase().includes(val));
+            if (matches.length > 0) {
+                suggestions.innerHTML = matches.map(p => `
+                    <div class="px-3 py-2 cursor-pointer text-sm hover:bg-dark-600 transition-colors" onclick="selectSuggestion('${p.repo}')">
+                        <div class="text-white">${p.name}</div>
+                        <div class="text-xs text-gray-500">${p.repo} · ${p.size}</div>
+                    </div>
+                `).join('');
+                suggestions.classList.remove('hidden');
+            } else {
+                suggestions.classList.add('hidden');
+            }
+        });
+
+        input.addEventListener('blur', () => setTimeout(() => suggestions.classList.add('hidden'), 200));
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') startDownload(); });
+        function selectSuggestion(repo) { input.value = repo; suggestions.classList.add('hidden'); }
+
         fetchStatus();
-        setInterval(fetchStatus, 3000);
+        setInterval(fetchStatus, 2000);
     </script>
 </body>
 </html>
