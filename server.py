@@ -389,21 +389,46 @@ async def stop_service(name: str):
         return {"success": False, "message": "Unknown service"}
 
     process_name = service.get("process", name)
-    killed = []
+    procs_to_kill = []
 
+    # Collect matching processes
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             cmdline = proc.info.get('cmdline') or []
             proc_name = proc.info.get('name', '')
             if process_name in proc_name or any(process_name in arg for arg in cmdline):
-                proc.terminate()
-                killed.append(proc.info['pid'])
+                procs_to_kill.append(proc)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
-    if killed:
-        return {"success": True, "message": f"Stopped PIDs: {killed}"}
-    return {"success": False, "message": "No matching process found"}
+    if not procs_to_kill:
+        return {"success": False, "message": "No matching process found"}
+
+    # SIGTERM first (graceful)
+    killed = []
+    for proc in procs_to_kill:
+        try:
+            proc.terminate()
+            killed.append(proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Wait up to 3s for graceful shutdown
+    gone, alive = psutil.wait_procs(procs_to_kill, timeout=3)
+
+    # SIGKILL stubborn processes
+    force_killed = []
+    for proc in alive:
+        try:
+            proc.kill()
+            force_killed.append(proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    msg = f"Stopped PIDs: {killed}"
+    if force_killed:
+        msg += f" (force killed: {force_killed})"
+    return {"success": True, "message": msg}
 
 
 @app.post("/api/service/{name}/restart")
