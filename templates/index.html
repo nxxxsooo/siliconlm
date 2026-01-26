@@ -23,6 +23,7 @@
         .status-dot { width: 10px; height: 10px; border-radius: 50%; }
         .status-running { background: #3fb950; box-shadow: 0 0 8px #3fb95080; }
         .status-stopped { background: #484f58; }
+        .status-disabled { background: #6b7280; opacity: 0.5; }
         .card { background: rgba(22, 27, 34, 0.8); backdrop-filter: blur(10px); border: 1px solid #30363d; }
         .card:hover { border-color: #484f58; }
         .btn-primary { background: linear-gradient(135deg, #238636 0%, #2ea043 100%); }
@@ -388,8 +389,8 @@
                 <div class="card rounded-xl p-4 transition-all flex flex-col">
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-2">
-                            <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
-                            <span class="font-medium text-white">${s.display}</span>
+                            <div class="status-dot ${!s.enabled ? 'status-disabled' : s.running ? 'status-running' : 'status-stopped'}"></div>
+                            <span class="font-medium ${!s.enabled ? 'text-gray-500' : 'text-white'}">${s.display}</span>
                         </div>
                         <span class="text-xs text-gray-500">
                             ${s.port ? 'Port ' + s.port : ''}${s.pid ? ' PID ' + s.pid : ''}
@@ -399,7 +400,9 @@
                         ${hasMetrics ? renderServiceMetrics(s.name, m) : ''}
                     </div>
                     <div class="flex gap-2 mt-auto pt-2">
-                        ${s.running ? `
+                        ${!s.enabled ? `
+                            <span class="text-xs text-gray-500">Disabled in settings</span>
+                        ` : s.running ? `
                             <button onclick="serviceAction('${s.name}', 'stop')"
                                     class="flex-1 bg-red-900/50 hover:bg-red-900 text-red-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
                                 Stop

@@ -170,13 +170,16 @@ def check_process(name: str) -> Optional[int]:
 def get_service_status(name: str) -> dict:
     """Get status of a service"""
     service = SERVICES.get(name, {})
+    service_settings = _settings.get("services", {}).get(name, {})
+    enabled = service_settings.get("enabled", True)
     status = {
         "name": name,
         "display": service.get("display", name),
         "running": False,
         "pid": None,
-        "can_start": service.get("start_cmd") is not None,
-        "note": service.get("note")
+        "enabled": enabled,
+        "can_start": service.get("start_cmd") is not None and enabled,
+        "note": service.get("note") if enabled else "Disabled in settings"
     }
 
     if service.get("check") == "port":
