@@ -194,17 +194,50 @@
 
         function renderServices(services) {
             const container = document.getElementById('services-container');
-            container.innerHTML = services.map(s => `
-                <div class="card rounded-xl p-4 transition-all">
+            container.innerHTML = services.map(s => {
+                const hasMetrics = s.metrics && s.running;
+                const m = s.metrics || {};
+                
+                return `
+                <div class="card rounded-xl p-4 transition-all ${hasMetrics ? 'col-span-full md:col-span-1' : ''}">
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-2">
                             <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
                             <span class="font-medium text-white">${s.display}</span>
                         </div>
                         <span class="text-xs text-gray-500">
-                            ${s.port ? 'Port ' + s.port : ''}${s.pid ? 'PID ' + s.pid : ''}
+                            ${s.port ? 'Port ' + s.port : ''}${s.pid ? ' PID ' + s.pid : ''}
                         </span>
                     </div>
+                    ${hasMetrics ? `
+                        <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                            <div class="bg-dark-700 rounded-lg p-2">
+                                <div class="text-lg font-bold text-accent">${m.total_requests || 0}</div>
+                                <div class="text-xs text-gray-500">Requests</div>
+                            </div>
+                            <div class="bg-dark-700 rounded-lg p-2">
+                                <div class="text-lg font-bold text-green-400">${m.total_tokens || 0}</div>
+                                <div class="text-xs text-gray-500">Tokens</div>
+                            </div>
+                            <div class="bg-dark-700 rounded-lg p-2">
+                                <div class="text-lg font-bold text-purple-400">${m.avg_latency_ms || 0}ms</div>
+                                <div class="text-xs text-gray-500">Avg Latency</div>
+                            </div>
+                        </div>
+                        ${m.current_model ? `<div class="text-xs text-gray-500 mb-2">Model: ${m.current_model.split('/').pop()}</div>` : ''}
+                        ${m.recent_requests && m.recent_requests.length > 0 ? `
+                            <div class="bg-dark-700 rounded-lg p-2 mb-3 max-h-24 overflow-y-auto">
+                                <div class="text-xs text-gray-500 mb-1">Recent Requests</div>
+                                ${m.recent_requests.slice(-5).reverse().map(r => `
+                                    <div class="text-xs text-gray-400 truncate">
+                                        <span class="text-gray-600">${r.time}</span>
+                                        <span class="text-accent">${r.latency_ms}ms</span>
+                                        <span class="text-gray-500">${r.preview}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    ` : ''}
                     <div class="flex gap-2">
                         ${s.running ? `
                             <button onclick="serviceAction('${s.name}', 'stop')"
@@ -227,7 +260,7 @@
                         `}
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function renderPresets(presetsData, downloadedModels) {

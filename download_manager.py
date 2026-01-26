@@ -233,7 +233,6 @@ _ALL_PRESETS = {
     "coding": [
         {"repo": "mlx-community/Qwen2.5-Coder-32B-Instruct-4bit", "name": "Qwen2.5 Coder 32B", "size": "18GB", "ram": 24},
         {"repo": "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx", "name": "DeepSeek V2 Lite", "size": "9GB", "ram": 16},
-        {"repo": "mlx-community/codellama-70b-instruct-4bit", "name": "CodeLlama 70B", "size": "40GB", "ram": 48},
     ],
     "general": [
         {"repo": "mlx-community/Llama-3.3-70B-Instruct-4bit", "name": "Llama 3.3 70B", "size": "40GB", "ram": 48},

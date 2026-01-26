@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """SiliconLM - Apple Silicon LLM Dashboard"""
 
+import json
 import socket
 import subprocess
 import time
@@ -43,8 +44,16 @@ DASHBOARD_DIR = Path(__file__).parent
 
 # Service definitions
 SERVICES = {
+    "mlx_embeddings": {
+        "display": "MLX Embeddings",
+        "port": 8766,
+        "check": "port",
+        "process": "embedding_server",
+        "start_cmd": [str(DASHBOARD_DIR / ".venv" / "bin" / "python"), str(DASHBOARD_DIR / "embedding_server.py")],
+        "metrics_url": "http://localhost:8766/api/metrics"
+    },
     "lmstudio": {
-        "display": "LMStudio Server",
+        "display": "LMStudio",
         "port": 1234,
         "check": "port",
         "start_cmd": None,
@@ -55,13 +64,6 @@ SERVICES = {
         "process": "opencode",
         "check": "process",
         "start_cmd": ["opencode"],
-        "start_in_terminal": True
-    },
-    "claude": {
-        "display": "Claude Code",
-        "process": "claude",
-        "check": "process",
-        "start_cmd": ["claude"],
         "start_in_terminal": True
     }
 }
@@ -101,10 +103,22 @@ def get_service_status(name: str) -> dict:
         port = service.get("port")
         status["running"] = check_port(port)
         status["port"] = port
+        # Also check process for PID
+        if service.get("process"):
+            status["pid"] = check_process(service.get("process"))
     elif service.get("check") == "process":
         pid = check_process(service.get("process", name))
         status["running"] = pid is not None
         status["pid"] = pid
+
+    # Fetch metrics if available and running
+    if status["running"] and service.get("metrics_url"):
+        try:
+            import urllib.request
+            with urllib.request.urlopen(service["metrics_url"], timeout=1) as resp:
+                status["metrics"] = json.loads(resp.read().decode())
+        except Exception:
+            pass  # Metrics fetch failed, ignore
 
     return status
 
