@@ -4,7 +4,7 @@
 
 Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量和下载。
 
-![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-black?logo=apple)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M%20series-black?logo=apple)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
