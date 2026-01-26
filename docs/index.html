@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="zh-CN" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -102,7 +102,7 @@
             <div class="flex items-center gap-4">
                 <!-- Language Toggle -->
                 <button id="langToggle" onclick="toggleLanguage()" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors px-3 py-1 rounded-full glass">
-                    中文
+                    EN
                 </button>
                 <a href="https://github.com/nxxxsooo/siliconlm" target="_blank" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors flex items-center gap-2">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -337,7 +337,7 @@ Requires macOS 14.0+ and Apple Silicon (M series)
             }
         };
 
-        let currentLang = localStorage.getItem('siliconlm-lang') || 'en';
+        let currentLang = localStorage.getItem('siliconlm-lang') || 'zh';
 
         function applyTranslations(lang) {
             document.querySelectorAll('[data-i18n]').forEach(el => {
