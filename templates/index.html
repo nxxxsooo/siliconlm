@@ -52,6 +52,7 @@
             <h1 class="text-2xl font-bold text-white">SiliconLM</h1>
             <div class="flex items-center gap-3">
                 <span id="refresh-indicator" class="text-xs text-gray-500"></span>
+                <button onclick="toggleLang()" class="text-gray-400 hover:text-white transition-colors text-xs font-medium px-2 py-1 rounded border border-dark-600 hover:border-dark-500" id="lang-toggle">EN</button>
                 <button onclick="toggleSettings()" class="text-gray-400 hover:text-white transition-colors" title="Settings">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -64,28 +65,28 @@
         <!-- Settings Panel -->
         <div id="settings-panel" class="mb-6 hidden">
             <div class="card rounded-xl p-4">
-                <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">Settings</h2>
+                <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider" data-i18n="settings">Settings</h2>
                 <div class="space-y-4">
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">Models Directory</label>
+                        <label class="text-xs text-gray-500 block mb-1" data-i18n="modelsDir">Models Directory</label>
                         <input type="text" id="settings-models-dir" 
                                class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
                     </div>
                     <div>
-                        <label class="text-xs text-gray-500 block mb-1">Default Embedding Model</label>
+                        <label class="text-xs text-gray-500 block mb-1" data-i18n="defaultEmbedding">Default Embedding Model</label>
                         <select id="settings-embedding-model" 
                                 class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
                             <option value="">Loading models...</option>
                         </select>
-                        <div class="text-xs text-gray-600 mt-1">Used when no model is specified in API requests</div>
+                        <div class="text-xs text-gray-600 mt-1" data-i18n="defaultEmbeddingHint">Used when no model is specified in API requests</div>
                     </div>
                     <div>
-                        <label class="text-xs text-gray-500 block mb-2">Services</label>
+                        <label class="text-xs text-gray-500 block mb-2" data-i18n="services">Services</label>
                         <div class="space-y-2" id="settings-services"></div>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="saveSettings()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white">Save</button>
-                        <button onclick="toggleSettings()" class="bg-dark-600 hover:bg-dark-500 px-4 py-2 rounded-lg text-sm text-gray-300">Cancel</button>
+                        <button onclick="saveSettings()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white" data-i18n="save">Save</button>
+                        <button onclick="toggleSettings()" class="bg-dark-600 hover:bg-dark-500 px-4 py-2 rounded-lg text-sm text-gray-300" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -94,27 +95,27 @@
         <!-- System Stats -->
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
             <div class="card rounded-xl p-3">
-                <div class="text-xs text-gray-500 mb-1">Chip</div>
+                <div class="text-xs text-gray-500 mb-1" data-i18n="chip">Chip</div>
                 <div class="text-sm font-semibold text-white truncate" id="machine-chip">--</div>
                 <div class="text-xs text-gray-500" id="machine-cores">--</div>
             </div>
             <div class="card rounded-xl p-3">
-                <div class="text-xs text-gray-500 mb-1">GPU</div>
+                <div class="text-xs text-gray-500 mb-1" data-i18n="gpu">GPU</div>
                 <div class="text-sm font-semibold text-white" id="machine-gpu">--</div>
                 <div class="text-xs text-gray-500" id="machine-neural">--</div>
             </div>
             <div class="card rounded-xl p-3">
-                <div class="text-xs text-gray-500 mb-1">RAM</div>
+                <div class="text-xs text-gray-500 mb-1" data-i18n="ram">RAM</div>
                 <div class="text-sm font-semibold text-white"><span id="machine-ram">--</span></div>
-                <div class="text-xs text-gray-500"><span id="mem-percent">--%</span> used</div>
+                <div class="text-xs text-gray-500"><span id="mem-percent">--%</span> <span data-i18n="used">used</span></div>
             </div>
             <div class="card rounded-xl p-3">
-                <div class="text-xs text-gray-500 mb-1">Disk</div>
+                <div class="text-xs text-gray-500 mb-1" data-i18n="disk">Disk</div>
                 <div class="text-sm font-semibold text-white" id="disk-free">--</div>
-                <div class="text-xs text-gray-500"><span id="disk-percent">--%</span> used</div>
+                <div class="text-xs text-gray-500"><span id="disk-percent">--%</span> <span data-i18n="used">used</span></div>
             </div>
             <div class="card rounded-xl p-3">
-                <div class="text-xs text-gray-500 mb-1">Models</div>
+                <div class="text-xs text-gray-500 mb-1" data-i18n="models">Models</div>
                 <div class="text-sm font-semibold text-white" id="models-size">--</div>
                 <div class="text-xs text-gray-500">macOS <span id="machine-os">--</span></div>
             </div>
@@ -122,15 +123,15 @@
 
         <!-- Services -->
         <div class="mb-6">
-            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Services</h2>
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="services">Services</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="services-container"></div>
         </div>
 
         <!-- Embeddings Activity (from 8766) -->
         <div id="activity-section" class="mb-6 hidden">
             <div class="flex items-center justify-between mb-3">
-                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">Embeddings Activity</h2>
-                <button id="activity-toggle" onclick="toggleActivity()" class="text-xs text-gray-500 hover:text-gray-300">
+                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider" data-i18n="embeddingsActivity">Embeddings Activity</h2>
+                <button id="activity-toggle" onclick="toggleActivity()" class="text-xs text-gray-500 hover:text-gray-300" data-i18n="showMore">
                     Show more ▼
                 </button>
             </div>
@@ -146,12 +147,13 @@
                 <div class="flex gap-2 mb-4">
                     <div class="flex-1 relative">
                         <input type="text" id="download-input" 
+                               data-i18n="hfRepoPlaceholder"
                                placeholder="HuggingFace repo (e.g. mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)"
                                class="w-full bg-dark-700 border border-dark-600 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 transition-all">
                         <div id="suggestions" class="absolute top-full left-0 right-0 bg-dark-700 border border-dark-600 rounded-b-lg hidden z-10 max-h-48 overflow-y-auto"></div>
                     </div>
                     <button onclick="startDownload()" 
-                            class="btn-primary px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all">
+                            class="btn-primary px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all" data-i18n="download">
                         Download
                     </button>
                     <button onclick="openSearchModal()" 
@@ -159,7 +161,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                         </svg>
-                        Search HF
+                        <span data-i18n="searchHF">Search HF</span>
                     </button>
                 </div>
                 <div id="presets-container"></div>
@@ -168,26 +170,26 @@
 
         <!-- Active Downloads -->
         <div id="active-downloads-section" class="mb-6 hidden">
-            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Downloading</h2>
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="downloading">Downloading</h2>
             <div id="active-downloads" class="space-y-3"></div>
         </div>
 
         <!-- Queue -->
         <div id="queue-section" class="mb-6 hidden">
-            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Queue</h2>
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="queue">Queue</h2>
             <div id="queue-container" class="space-y-2"></div>
         </div>
 
         <!-- External Downloads -->
         <div id="downloads-section" class="mb-6 hidden">
-            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">External Downloads</h2>
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="externalDownloads">External Downloads</h2>
             <div id="downloads-container" class="space-y-2"></div>
         </div>
 
         <!-- Models -->
         <div class="mb-6">
             <div class="flex items-center justify-between mb-3">
-                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">Downloaded Models</h2>
+                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider" data-i18n="downloadedModels">Downloaded Models</h2>
                 <span id="models-size" class="text-xs text-gray-500">-- GB total</span>
             </div>
             <div class="card rounded-xl overflow-hidden">
@@ -210,6 +212,63 @@
     </div>
 
     <script>
+        // ========== i18n ==========
+        const i18n = {
+            zh: {
+                settings: '设置', save: '保存', cancel: '取消',
+                modelsDir: '模型目录', defaultEmbedding: '默认嵌入模型',
+                defaultEmbeddingHint: 'API请求未指定模型时使用',
+                services: '服务', chip: '芯片', gpu: 'GPU', ram: '内存', disk: '磁盘', models: '模型',
+                used: '已用', cores: '核心', neuralEngine: '神经引擎',
+                embeddingsActivity: '嵌入活动', showMore: '展开 ▼', showLess: '收起 ▲',
+                downloading: '下载中', queue: '队列', externalDownloads: '外部下载',
+                downloadedModels: '已下载模型', name: '名称', size: '大小', actions: '操作',
+                download: '下载', pause: '暂停', resume: '恢复', delete: '删除', reveal: '定位',
+                searchHF: '搜索 HF', searchPlaceholder: '搜索 HuggingFace 嵌入模型...',
+                search: '搜索', noModels: '未找到模型', searching: '搜索中...',
+                searchHint: '搜索 HuggingFace 上的嵌入模型', trySearch: '试试: "bge", "gte", "e5", "nomic", "mxbai"',
+                addedToQueue: '已添加到队列', alreadyDownloaded: '已下载', settingsSaved: '设置已保存',
+                hfRepoPlaceholder: 'HuggingFace 仓库 (如 mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)',
+                autoSelect: '(自动选择第一个可用)',
+            },
+            en: {
+                settings: 'Settings', save: 'Save', cancel: 'Cancel',
+                modelsDir: 'Models Directory', defaultEmbedding: 'Default Embedding Model',
+                defaultEmbeddingHint: 'Used when no model is specified in API requests',
+                services: 'Services', chip: 'Chip', gpu: 'GPU', ram: 'RAM', disk: 'Disk', models: 'Models',
+                used: 'used', cores: 'cores', neuralEngine: 'Neural Engine',
+                embeddingsActivity: 'Embeddings Activity', showMore: 'Show more ▼', showLess: 'Show less ▲',
+                downloading: 'Downloading', queue: 'Queue', externalDownloads: 'External Downloads',
+                downloadedModels: 'Downloaded Models', name: 'NAME', size: 'SIZE', actions: 'ACTIONS',
+                download: 'Download', pause: 'Pause', resume: 'Resume', delete: 'Delete', reveal: 'Reveal',
+                searchHF: 'Search HF', searchPlaceholder: 'Search HuggingFace for embedding models...',
+                search: 'Search', noModels: 'No models found', searching: 'Searching...',
+                searchHint: 'Search for embedding models on HuggingFace', trySearch: 'Try: "bge", "gte", "e5", "nomic", "mxbai"',
+                addedToQueue: 'Added to queue', alreadyDownloaded: 'Already downloaded', settingsSaved: 'Settings saved',
+                hfRepoPlaceholder: 'HuggingFace repo (e.g. mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)',
+                autoSelect: '(Auto-select first available)',
+            }
+        };
+        let currentLang = localStorage.getItem('siliconlm-lang') || 'zh';
+        
+        function t(key) { return i18n[currentLang][key] || i18n['en'][key] || key; }
+        
+        function toggleLang() {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('siliconlm-lang', currentLang);
+            document.getElementById('lang-toggle').textContent = currentLang === 'zh' ? 'EN' : '中文';
+            applyTranslations();
+        }
+        
+        function applyTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (el.tagName === 'INPUT') el.placeholder = t(key);
+                else el.textContent = t(key);
+            });
+        }
+        
+        // ========== App State ==========
         let presets = [];
         let allModels = [];
         let sortField = 'size';
@@ -836,7 +895,7 @@
             if (!query) return;
             
             const resultsContainer = document.getElementById('hf-search-results');
-            resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">Searching...</div>';
+            resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">${t('searching')}</div>`;
             
             try {
                 const res = await fetch('/api/search/huggingface', {
@@ -852,7 +911,7 @@
                 }
                 
                 if (!data.models || data.models.length === 0) {
-                    resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No models found</div>';
+                    resultsContainer.innerHTML = `<div class="text-center py-8 text-gray-500">${t('noModels')}</div>`;
                     return;
                 }
                 
@@ -869,7 +928,7 @@
                         </div>
                         <button onclick="downloadFromSearch('${m.id}')" 
                                 class="btn-primary px-3 py-1.5 rounded text-xs font-medium text-white ml-3">
-                            Download
+                            ${t('download')}
                         </button>
                     </div>
                 `).join('');
@@ -913,11 +972,12 @@
             <div class="p-4 border-b border-dark-600 flex items-center gap-3">
                 <div class="flex-1 relative">
                     <input type="text" id="hf-search-input" 
+                           data-i18n="searchPlaceholder"
                            placeholder="Search HuggingFace for embedding models..."
                            class="w-full bg-dark-700 border border-dark-600 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent">
                 </div>
                 <button onclick="searchHuggingFace()" 
-                        class="btn-primary px-4 py-2.5 rounded-lg text-sm font-medium text-white">
+                        class="btn-primary px-4 py-2.5 rounded-lg text-sm font-medium text-white" data-i18n="search">
                     Search
                 </button>
                 <button onclick="closeSearchModal()" 
@@ -929,11 +989,17 @@
             </div>
             <div id="hf-search-results" class="flex-1 overflow-y-auto p-4 space-y-2">
                 <div class="text-center py-8 text-gray-500">
-                    Search for embedding models on HuggingFace<br>
-                    <span class="text-xs">Try: "bge", "gte", "e5", "nomic", "mxbai"</span>
+                    <span data-i18n="searchHint">Search for embedding models on HuggingFace</span><br>
+                    <span class="text-xs" data-i18n="trySearch">Try: "bge", "gte", "e5", "nomic", "mxbai"</span>
                 </div>
             </div>
         </div>
     </div>
+    
+    <script>
+        // Initialize i18n
+        document.getElementById('lang-toggle').textContent = currentLang === 'zh' ? 'EN' : '中文';
+        applyTranslations();
+    </script>
 </body>
 </html>
