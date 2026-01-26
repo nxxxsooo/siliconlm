@@ -34,7 +34,7 @@ class Metrics:
     current_model: Optional[str] = None
     embedding_dim: int = 0
     
-    def record_request(self, model: str, tokens: int, latency_ms: float, input_preview: str):
+    def record_request(self, model: str, tokens: int, latency_ms: float, input_preview: str, backend: str = ""):
         self.total_requests += 1
         self.total_tokens += tokens
         self.total_latency_ms += latency_ms
@@ -43,7 +43,8 @@ class Metrics:
             "model": model.split("/")[-1][:20],
             "tokens": tokens,
             "latency_ms": round(latency_ms, 1),
-            "preview": input_preview[:50] + "..." if len(input_preview) > 50 else input_preview
+            "preview": input_preview[:50] + "..." if len(input_preview) > 50 else input_preview,
+            "backend": backend
         })
     
     @property
@@ -81,7 +82,8 @@ app.add_middleware(
 MLX_SUPPORTED_TYPES = {"bert", "xlm-roberta", "roberta"}
 # sentence-transformers supported architectures (encoder models)
 ST_SUPPORTED_TYPES = {"bert", "xlm-roberta", "roberta", "mpnet", "distilbert"}
-# Unsupported: decoder-only models like qwen3, llama - need mlx-lm (future)
+# mlx-lm supported architectures (decoder models with mean pooling)
+MLX_LM_SUPPORTED_TYPES = {"qwen3", "qwen2", "llama", "mistral", "gemma", "phi"}
 
 def _get_model_info(model_path: Path) -> dict:
     """Determine which backend can handle this model, or None if unsupported."""
@@ -99,6 +101,10 @@ def _get_model_info(model_path: Path) -> dict:
         if has_safetensors and model_type in MLX_SUPPORTED_TYPES:
             return {"model_type": model_type, "backend": "mlx"}
         
+        # mlx-lm backend: MLX-quantized decoder models (safetensors only, no pytorch)
+        if has_safetensors and not has_pytorch and model_type in MLX_LM_SUPPORTED_TYPES:
+            return {"model_type": model_type, "backend": "mlx-lm"}
+        
         # sentence-transformers: pytorch weights + supported encoder architecture
         if has_pytorch and model_type in ST_SUPPORTED_TYPES:
             return {"model_type": model_type, "backend": "sentence-transformers"}
@@ -107,8 +113,6 @@ def _get_model_info(model_path: Path) -> dict:
         if has_pytorch:
             return {"model_type": model_type, "backend": "sentence-transformers"}
         
-        # MLX-quantized decoder models (qwen3, llama, etc.) - NOT YET SUPPORTED
-        # Would need mlx-lm backend with custom pooling
         return None
     except Exception:
         return None
@@ -150,15 +154,20 @@ def discover_embedding_models() -> List[dict]:
 
 
 _st_models = {}
+_mlx_lm_models = {}
 
 def get_model(model_id: str):
-    global _model_cache, _st_models
+    """Load model with appropriate backend. Returns (model_data, backend_type)."""
+    global _model_cache, _st_models, _mlx_lm_models
     
     with _model_lock:
+        # Check caches first
         if model_id in _model_cache:
             return _model_cache[model_id], "mlx"
         if model_id in _st_models:
             return _st_models[model_id], "st"
+        if model_id in _mlx_lm_models:
+            return _mlx_lm_models[model_id], "mlx-lm"
         
         local_path = MODELS_DIR / model_id
         info = _get_model_info(local_path) if local_path.exists() else None
@@ -174,7 +183,15 @@ def get_model(model_id: str):
                 _model_cache[model_id] = (model, tokenizer)
                 metrics.current_model = model_id
                 return (model, tokenizer), "mlx"
-            else:
+            
+            elif backend == "mlx-lm":
+                from mlx_lm import load as mlx_lm_load
+                model, tokenizer = mlx_lm_load(str(local_path) if local_path.exists() else model_id)
+                _mlx_lm_models[model_id] = (model, tokenizer)
+                metrics.current_model = model_id
+                return (model, tokenizer), "mlx-lm"
+            
+            else:  # sentence-transformers
                 from sentence_transformers import SentenceTransformer
                 model = SentenceTransformer(str(local_path) if local_path.exists() else model_id)
                 _st_models[model_id] = model
@@ -233,6 +250,7 @@ def create_embeddings(request: EmbeddingRequest):
     
     inputs = [t[:MAX_INPUT_CHARS] for t in inputs]
     
+    backend = ""
     with _inference_lock:
         try:
             import gc
@@ -254,7 +272,41 @@ def create_embeddings(request: EmbeddingRequest):
                 mx.eval(embeddings)
                 embeddings_list = embeddings.tolist()
                 del embeddings
-            else:
+            
+            elif backend == "mlx-lm":
+                # Decoder model embedding via last hidden state + mean pooling
+                import mlx.core as mx
+                import mlx.nn as nn
+                
+                model, tokenizer = model_data
+                all_embeddings = []
+                
+                for text in inputs:
+                    input_ids = mx.array([tokenizer.encode(text)])
+                    
+                    # Get token embeddings
+                    h = model.model.embed_tokens(input_ids)
+                    
+                    # Create causal mask
+                    T = h.shape[1]
+                    mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
+                    mask = mask.astype(h.dtype)
+                    
+                    # Pass through transformer layers
+                    for layer in model.model.layers:
+                        h = layer(h, mask=mask)
+                    
+                    # Final layer norm + mean pooling
+                    h = model.model.norm(h)
+                    embedding = mx.mean(h, axis=1)
+                    all_embeddings.append(embedding)
+                
+                embeddings = mx.concatenate(all_embeddings, axis=0)
+                mx.eval(embeddings)
+                embeddings_list = embeddings.tolist()
+                del embeddings, all_embeddings
+            
+            else:  # sentence-transformers
                 embeddings = model_data.encode(inputs, convert_to_numpy=True)
                 embeddings_list = embeddings.tolist()
                 del embeddings
@@ -272,7 +324,7 @@ def create_embeddings(request: EmbeddingRequest):
     latency_ms = (time.time() - start_time) * 1000
     
     preview = inputs[0] if inputs else ""
-    metrics.record_request(request.model, estimated_tokens, latency_ms, preview)
+    metrics.record_request(request.model, estimated_tokens, latency_ms, preview, backend)
     metrics.embedding_dim = dim
     
     return {

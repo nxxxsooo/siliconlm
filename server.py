@@ -685,6 +685,51 @@ async def delete_download(req: DownloadRequest):
     return {"success": success}
 
 
+class SearchRequest(BaseModel):
+    query: str
+    filter: str = "embedding"  # "embedding", "llm", "all"
+
+
+@app.post("/api/search/huggingface")
+async def search_huggingface(req: SearchRequest):
+    """Search HuggingFace for models"""
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        
+        query = req.query
+        
+        # Search for models
+        results = api.list_models(
+            search=query,
+            limit=20,
+            sort="downloads",
+            direction=-1
+        )
+        
+        models = []
+        for model in results:
+            # Get model info
+            try:
+                info = api.model_info(model.id)
+                size_bytes = sum(s.size for s in (info.siblings or []) if s.size)
+            except Exception:
+                size_bytes = 0
+            
+            models.append({
+                "id": model.id,
+                "name": model.id.split("/")[-1],
+                "downloads": model.downloads or 0,
+                "likes": model.likes or 0,
+                "size_bytes": size_bytes,
+                "tags": model.tags[:5] if model.tags else [],
+            })
+        
+        return {"models": models}
+    except Exception as e:
+        return {"models": [], "error": str(e)}
+
+
 # ============================================================================
 # OpenAI-compatible Proxy Routes (/v1/*)
 # Automatically routes embeddings to MLX (8766), others to LMStudio (1234)

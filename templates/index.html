@@ -72,6 +72,14 @@
                                class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
                     </div>
                     <div>
+                        <label class="text-xs text-gray-500 block mb-1">Default Embedding Model</label>
+                        <select id="settings-embedding-model" 
+                                class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
+                            <option value="">Loading models...</option>
+                        </select>
+                        <div class="text-xs text-gray-600 mt-1">Used when no model is specified in API requests</div>
+                    </div>
+                    <div>
                         <label class="text-xs text-gray-500 block mb-2">Services</label>
                         <div class="space-y-2" id="settings-services"></div>
                     </div>
@@ -145,6 +153,13 @@
                     <button onclick="startDownload()" 
                             class="btn-primary px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all">
                         Download
+                    </button>
+                    <button onclick="openSearchModal()" 
+                            class="bg-dark-600 hover:bg-dark-500 px-4 py-2.5 rounded-lg text-sm text-gray-300 transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        Search HF
                     </button>
                 </div>
                 <div id="presets-container"></div>
@@ -562,15 +577,30 @@
             }
             
             section.classList.remove('hidden');
-            container.innerHTML = requests.slice().reverse().map(r => `
+            const backendColors = {
+                'mlx': 'bg-blue-500/20 text-blue-400',
+                'mlx-lm': 'bg-purple-500/20 text-purple-400',
+                'st': 'bg-green-500/20 text-green-400'
+            };
+            const backendLabels = {
+                'mlx': 'MLX',
+                'mlx-lm': 'LM',
+                'st': 'ST'
+            };
+            container.innerHTML = requests.slice().reverse().map(r => {
+                const backend = r.backend || 'mlx';
+                const colorClass = backendColors[backend] || 'bg-gray-500/20 text-gray-400';
+                const label = backendLabels[backend] || backend.toUpperCase();
+                return `
                 <div class="flex items-center gap-2 py-1 border-b border-dark-700 last:border-0">
                     <span class="text-gray-600 w-14">${r.time}</span>
-                    <span class="text-purple-400 w-16 text-right">${r.latency_ms}ms</span>
+                    <span class="${colorClass} px-1.5 py-0.5 rounded text-[10px] font-medium w-8 text-center">${label}</span>
+                    <span class="text-purple-400 w-14 text-right">${r.latency_ms}ms</span>
                     <span class="text-yellow-400 w-12">${dim}d</span>
-                    <span class="text-gray-400 w-28 truncate">${r.model}</span>
+                    <span class="text-gray-400 w-24 truncate">${r.model}</span>
                     <span class="text-gray-500 flex-1 truncate">${r.preview}</span>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         let activityExpanded = false;
@@ -722,10 +752,21 @@
         }
         
         async function loadSettings() {
-            const res = await fetch('/api/settings');
-            currentSettings = await res.json();
+            const [settingsRes, modelsRes] = await Promise.all([
+                fetch('/api/settings'),
+                fetch('http://localhost:8766/api/models').catch(() => ({ json: () => ({ models: [] }) }))
+            ]);
+            currentSettings = await settingsRes.json();
+            const modelsData = await modelsRes.json();
             
             document.getElementById('settings-models-dir').value = currentSettings.models_dir || '~/.lmstudio/models';
+            
+            // Populate embedding model dropdown
+            const modelSelect = document.getElementById('settings-embedding-model');
+            const models = modelsData.models || [];
+            const defaultModel = currentSettings.embedding?.default_model || '';
+            modelSelect.innerHTML = '<option value="">(Auto-select first available)</option>' + 
+                models.map(m => `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.backend})</option>`).join('');
             
             const servicesContainer = document.getElementById('settings-services');
             const services = currentSettings.services || {};
@@ -741,6 +782,7 @@
         
         async function saveSettings() {
             const modelsDir = document.getElementById('settings-models-dir').value;
+            const embeddingModel = document.getElementById('settings-embedding-model').value;
             const services = {};
             
             Object.keys(currentSettings.services || {}).forEach(name => {
@@ -754,7 +796,11 @@
             const newSettings = {
                 ...currentSettings,
                 models_dir: modelsDir,
-                services: services
+                services: services,
+                embedding: {
+                    ...currentSettings.embedding,
+                    default_model: embeddingModel
+                }
             };
             
             const res = await fetch('/api/settings', {
@@ -774,6 +820,120 @@
 
         fetchStatus();
         setInterval(fetchStatus, 2000);
+        
+        // ========== Search HuggingFace Modal ==========
+        function openSearchModal() {
+            document.getElementById('search-modal').classList.remove('hidden');
+            document.getElementById('hf-search-input').focus();
+        }
+        
+        function closeSearchModal() {
+            document.getElementById('search-modal').classList.add('hidden');
+        }
+        
+        async function searchHuggingFace() {
+            const query = document.getElementById('hf-search-input').value.trim();
+            if (!query) return;
+            
+            const resultsContainer = document.getElementById('hf-search-results');
+            resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">Searching...</div>';
+            
+            try {
+                const res = await fetch('/api/search/huggingface', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, filter: 'embedding' })
+                });
+                const data = await res.json();
+                
+                if (data.error) {
+                    resultsContainer.innerHTML = `<div class="text-center py-8 text-red-400">${data.error}</div>`;
+                    return;
+                }
+                
+                if (!data.models || data.models.length === 0) {
+                    resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No models found</div>';
+                    return;
+                }
+                
+                resultsContainer.innerHTML = data.models.map(m => `
+                    <div class="flex items-center justify-between p-3 bg-dark-700 rounded-lg hover:bg-dark-600 transition-colors">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-white truncate">${m.name}</div>
+                            <div class="text-xs text-gray-500 truncate">${m.id}</div>
+                            <div class="flex gap-3 mt-1">
+                                <span class="text-xs text-gray-600">↓ ${formatNumber(m.downloads)}</span>
+                                <span class="text-xs text-gray-600">♥ ${m.likes}</span>
+                                ${m.size_bytes ? `<span class="text-xs text-gray-600">${formatBytes(m.size_bytes)}</span>` : ''}
+                            </div>
+                        </div>
+                        <button onclick="downloadFromSearch('${m.id}')" 
+                                class="btn-primary px-3 py-1.5 rounded text-xs font-medium text-white ml-3">
+                            Download
+                        </button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                resultsContainer.innerHTML = `<div class="text-center py-8 text-red-400">Search failed: ${e.message}</div>`;
+            }
+        }
+        
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+        
+        async function downloadFromSearch(repoId) {
+            const res = await fetch('/api/download/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId })
+            });
+            const data = await res.json();
+            const name = repoId.split('/').pop();
+            showToast(data.task?.status === 'completed' ? `${name} already downloaded` : `${name} added to queue`, 'success');
+            closeSearchModal();
+        }
+        
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeSearchModal();
+        });
+        
+        // Search on enter
+        document.getElementById('hf-search-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') searchHuggingFace();
+        });
     </script>
+    
+    <!-- Search Modal -->
+    <div id="search-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-dark-800 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl border border-dark-600">
+            <div class="p-4 border-b border-dark-600 flex items-center gap-3">
+                <div class="flex-1 relative">
+                    <input type="text" id="hf-search-input" 
+                           placeholder="Search HuggingFace for embedding models..."
+                           class="w-full bg-dark-700 border border-dark-600 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent">
+                </div>
+                <button onclick="searchHuggingFace()" 
+                        class="btn-primary px-4 py-2.5 rounded-lg text-sm font-medium text-white">
+                    Search
+                </button>
+                <button onclick="closeSearchModal()" 
+                        class="text-gray-400 hover:text-white p-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="hf-search-results" class="flex-1 overflow-y-auto p-4 space-y-2">
+                <div class="text-center py-8 text-gray-500">
+                    Search for embedding models on HuggingFace<br>
+                    <span class="text-xs">Try: "bge", "gte", "e5", "nomic", "mxbai"</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
