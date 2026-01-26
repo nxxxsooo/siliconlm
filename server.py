@@ -112,13 +112,44 @@ def get_service_status(name: str) -> dict:
         status["pid"] = pid
 
     # Fetch metrics if available and running
-    if status["running"] and service.get("metrics_url"):
-        try:
-            import urllib.request
-            with urllib.request.urlopen(service["metrics_url"], timeout=1) as resp:
-                status["metrics"] = json.loads(resp.read().decode())
-        except Exception:
-            pass  # Metrics fetch failed, ignore
+    if status["running"]:
+        if service.get("metrics_url"):
+            try:
+                import urllib.request
+                with urllib.request.urlopen(service["metrics_url"], timeout=1) as resp:
+                    status["metrics"] = json.loads(resp.read().decode())
+            except Exception:
+                pass
+        
+        # LMStudio metrics - fetch model info
+        if name == "lmstudio":
+            try:
+                import urllib.request
+                with urllib.request.urlopen("http://localhost:1234/v1/models", timeout=1) as resp:
+                    models_data = json.loads(resp.read().decode())
+                    models = models_data.get("data", [])
+                    status["metrics"] = {
+                        "models_loaded": len(models),
+                        "current_model": models[0]["id"] if models else None,
+                        "models": [m["id"].split("/")[-1][:25] for m in models[:3]]
+                    }
+            except Exception:
+                status["metrics"] = {"models_loaded": 0, "current_model": None}
+        
+        # OpenCode metrics - process info
+        if name == "opencode" and status["pid"]:
+            try:
+                proc = psutil.Process(status["pid"])
+                mem = proc.memory_info()
+                create_time = proc.create_time()
+                uptime = time.time() - create_time
+                status["metrics"] = {
+                    "memory_mb": round(mem.rss / 1024 / 1024),
+                    "uptime_seconds": round(uptime),
+                    "cpu_percent": round(proc.cpu_percent(interval=0.1), 1)
+                }
+            except Exception:
+                pass
 
     return status
 

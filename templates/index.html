@@ -177,6 +177,86 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
+        function formatUptime(seconds) {
+            if (!seconds) return '--';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        }
+
+        function renderServiceMetrics(name, m) {
+            // MLX Embeddings - show requests, tokens, latency
+            if (name === 'mlx_embeddings') {
+                return `
+                    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-accent">${m.total_requests || 0}</div>
+                            <div class="text-xs text-gray-500">Requests</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-green-400">${m.total_tokens || 0}</div>
+                            <div class="text-xs text-gray-500">Tokens</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-purple-400">${m.avg_latency_ms || 0}ms</div>
+                            <div class="text-xs text-gray-500">Latency</div>
+                        </div>
+                    </div>
+                    ${m.current_model ? `<div class="text-xs text-gray-500 mb-2">Model: ${m.current_model.split('/').pop()}</div>` : ''}
+                    ${m.recent_requests && m.recent_requests.length > 0 ? `
+                        <div class="bg-dark-700 rounded-lg p-2 mb-3 max-h-20 overflow-y-auto">
+                            ${m.recent_requests.slice(-3).reverse().map(r => `
+                                <div class="text-xs text-gray-400 truncate">
+                                    <span class="text-gray-600">${r.time}</span>
+                                    <span class="text-accent">${r.latency_ms}ms</span>
+                                    <span class="text-gray-500">${r.preview}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                `;
+            }
+            
+            // LMStudio - show loaded models
+            if (name === 'lmstudio') {
+                return `
+                    <div class="grid grid-cols-2 gap-2 mb-3 text-center">
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-accent">${m.models_loaded || 0}</div>
+                            <div class="text-xs text-gray-500">Models</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2 text-left">
+                            <div class="text-xs text-gray-400 truncate">${m.current_model ? m.current_model.split('/').pop() : 'No model'}</div>
+                            <div class="text-xs text-gray-500">Active</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // OpenCode - show memory, uptime, cpu
+            if (name === 'opencode') {
+                return `
+                    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-accent">${m.memory_mb || 0}MB</div>
+                            <div class="text-xs text-gray-500">Memory</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-green-400">${formatUptime(m.uptime_seconds)}</div>
+                            <div class="text-xs text-gray-500">Uptime</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-purple-400">${m.cpu_percent || 0}%</div>
+                            <div class="text-xs text-gray-500">CPU</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return '';
+        }
+
         function renderMachineInfo(machine) {
             if (!machine) return;
             document.getElementById('machine-chip').textContent = machine.chip || '--';
@@ -209,35 +289,7 @@
                             ${s.port ? 'Port ' + s.port : ''}${s.pid ? ' PID ' + s.pid : ''}
                         </span>
                     </div>
-                    ${hasMetrics ? `
-                        <div class="grid grid-cols-3 gap-2 mb-3 text-center">
-                            <div class="bg-dark-700 rounded-lg p-2">
-                                <div class="text-lg font-bold text-accent">${m.total_requests || 0}</div>
-                                <div class="text-xs text-gray-500">Requests</div>
-                            </div>
-                            <div class="bg-dark-700 rounded-lg p-2">
-                                <div class="text-lg font-bold text-green-400">${m.total_tokens || 0}</div>
-                                <div class="text-xs text-gray-500">Tokens</div>
-                            </div>
-                            <div class="bg-dark-700 rounded-lg p-2">
-                                <div class="text-lg font-bold text-purple-400">${m.avg_latency_ms || 0}ms</div>
-                                <div class="text-xs text-gray-500">Avg Latency</div>
-                            </div>
-                        </div>
-                        ${m.current_model ? `<div class="text-xs text-gray-500 mb-2">Model: ${m.current_model.split('/').pop()}</div>` : ''}
-                        ${m.recent_requests && m.recent_requests.length > 0 ? `
-                            <div class="bg-dark-700 rounded-lg p-2 mb-3 max-h-24 overflow-y-auto">
-                                <div class="text-xs text-gray-500 mb-1">Recent Requests</div>
-                                ${m.recent_requests.slice(-5).reverse().map(r => `
-                                    <div class="text-xs text-gray-400 truncate">
-                                        <span class="text-gray-600">${r.time}</span>
-                                        <span class="text-accent">${r.latency_ms}ms</span>
-                                        <span class="text-gray-500">${r.preview}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        ` : ''}
-                    ` : ''}
+                    ${hasMetrics ? renderServiceMetrics(s.name, m) : ''}
                     <div class="flex gap-2">
                         ${s.running ? `
                             <button onclick="serviceAction('${s.name}', 'stop')"
