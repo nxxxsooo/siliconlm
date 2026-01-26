@@ -99,12 +99,18 @@
                 </svg>
                 <span class="font-semibold tracking-tight text-lg">SiliconLM</span>
             </div>
-            <a href="https://github.com/nxxxsooo/siliconlm" target="_blank" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors flex items-center gap-2">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                </svg>
-                GitHub
-            </a>
+            <div class="flex items-center gap-4">
+                <!-- Language Toggle -->
+                <button id="langToggle" onclick="toggleLanguage()" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors px-3 py-1 rounded-full glass">
+                    中文
+                </button>
+                <a href="https://github.com/nxxxsooo/siliconlm" target="_blank" class="text-sm font-medium text-apple-subtext hover:text-white transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
         </div>
     </nav>
 
@@ -133,19 +139,19 @@
                 </div>
             </div>
 
-            <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50">
+            <h1 class="text-5xl md:text-7xl font-bold tracking-tight mb-6 bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-white/50" data-i18n="hero.title">
                 Power at the Edge.
             </h1>
-            <p class="text-xl md:text-2xl text-apple-subtext max-w-2xl mx-auto font-light leading-relaxed">
+            <p class="text-xl md:text-2xl text-apple-subtext max-w-2xl mx-auto font-light leading-relaxed" data-i18n="hero.subtitle" data-i18n-html="true">
                 The native dashboard for running Local LLMs on Apple Silicon. <br class="hidden md:block">
                 Performance monitoring, model management, and inference in one place.
             </p>
 
             <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-                <a href="#install" class="px-8 py-3 rounded-full bg-white text-black font-medium hover:bg-gray-200 transition-colors w-full sm:w-auto">
+                <a href="#install" class="px-8 py-3 rounded-full bg-white text-black font-medium hover:bg-gray-200 transition-colors w-full sm:w-auto" data-i18n="hero.getStarted">
                     Get Started
                 </a>
-                <a href="https://github.com/nxxxsooo/siliconlm" class="px-8 py-3 rounded-full glass hover:bg-white/10 transition-colors w-full sm:w-auto">
+                <a href="https://github.com/nxxxsooo/siliconlm" class="px-8 py-3 rounded-full glass hover:bg-white/10 transition-colors w-full sm:w-auto" data-i18n="hero.viewSource">
                     View Source
                 </a>
             </div>
@@ -157,80 +163,74 @@
         <div class="max-w-6xl mx-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 
-                <!-- Feature 1 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6 text-blue-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Real-time Monitoring</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.monitoring.title">Real-time Monitoring</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.monitoring.desc">
                         Visualize NPU, GPU, and CPU usage instantly. Track memory pressure and thermal states optimized for M-series chips.
                     </p>
                 </div>
 
-                <!-- Feature 2 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6 text-purple-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Model Management</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.models.title">Model Management</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.models.desc">
                         Built-in aria2 downloader for high-speed model fetching. Organize GGUF files and manage storage effortlessly.
                     </p>
                 </div>
 
-                <!-- Feature 3 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center mb-6 text-green-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Smart Presets</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.presets.title">Smart Presets</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.presets.desc">
                         One-click configurations for Llama 3, Mistral, and Gemma. Optimized context windows and GPU layers for your specific RAM.
                     </p>
                 </div>
 
-                <!-- Feature 4 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center mb-6 text-orange-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Service Control</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.service.title">Service Control</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.service.desc">
                         Start, stop, and restart llama.cpp server instances directly from the UI. View logs in real-time.
                     </p>
                 </div>
 
-                <!-- Feature 5 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-6 text-pink-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Model Browser</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.browser.title">Model Browser</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.browser.desc">
                         Explore and discover new models. Filter by quantization, size, and compatibility with your hardware.
                     </p>
                 </div>
 
-                <!-- Feature 6 -->
                 <div class="glass glass-card p-8 rounded-3xl transition-all duration-300">
                     <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-6 text-indigo-400">
                         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3">Native Speed</h3>
-                    <p class="text-apple-subtext leading-relaxed">
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="features.speed.title">Native Speed</h3>
+                    <p class="text-apple-subtext leading-relaxed" data-i18n="features.speed.desc">
                         Built on top of llama.cpp with Metal acceleration. Zero overhead, maximum tokens per second.
                     </p>
                 </div>
@@ -242,7 +242,7 @@
     <!-- Install Section -->
     <section id="install" class="relative z-10 py-20 px-6">
         <div class="max-w-3xl mx-auto">
-            <h2 class="text-3xl md:text-4xl font-bold text-center mb-12">Ready to run?</h2>
+            <h2 class="text-3xl md:text-4xl font-bold text-center mb-12" data-i18n="install.title">Ready to run?</h2>
             
             <div class="glass rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
                 <div class="flex items-center gap-2 px-4 py-3 bg-white/5 border-b border-white/5">
@@ -267,7 +267,7 @@
                 </div>
             </div>
             
-            <p class="text-center mt-8 text-apple-subtext text-sm">
+            <p class="text-center mt-8 text-apple-subtext text-sm" data-i18n="install.requirements">
                 Requires macOS 14.0+ and Apple Silicon (M1/M2/M3)
             </p>
         </div>
@@ -283,11 +283,84 @@
             
             <div class="flex items-center gap-8 text-sm text-apple-subtext">
                 <a href="https://github.com/nxxxsooo/siliconlm" class="hover:text-white transition-colors">GitHub</a>
-                <a href="https://github.com/nxxxsooo/siliconlm/blob/main/LICENSE" class="hover:text-white transition-colors">MIT License</a>
-                <a href="https://github.com/nxxxsooo/siliconlm/issues" class="hover:text-white transition-colors">Report Issue</a>
+                <a href="https://github.com/nxxxsooo/siliconlm/blob/main/LICENSE" class="hover:text-white transition-colors" data-i18n="footer.license">MIT License</a>
+                <a href="https://github.com/nxxxsooo/siliconlm/issues" class="hover:text-white transition-colors" data-i18n="footer.issues">Report Issue</a>
             </div>
         </div>
     </footer>
 
+    <script>
+        const translations = {
+            en: {
+                'hero.title': 'Power at the Edge.',
+                'hero.subtitle': 'The native dashboard for running Local LLMs on Apple Silicon. <br class="hidden md:block">Performance monitoring, model management, and inference in one place.',
+                'hero.getStarted': 'Get Started',
+                'hero.viewSource': 'View Source',
+                'features.monitoring.title': 'Real-time Monitoring',
+                'features.monitoring.desc': 'Visualize NPU, GPU, and CPU usage instantly. Track memory pressure and thermal states optimized for M-series chips.',
+                'features.models.title': 'Model Management',
+                'features.models.desc': 'Built-in aria2 downloader for high-speed model fetching. Organize GGUF files and manage storage effortlessly.',
+                'features.presets.title': 'Smart Presets',
+                'features.presets.desc': 'One-click configurations for Llama 3, Mistral, and Gemma. Optimized context windows and GPU layers for your specific RAM.',
+                'features.service.title': 'Service Control',
+                'features.service.desc': 'Start, stop, and restart llama.cpp server instances directly from the UI. View logs in real-time.',
+                'features.browser.title': 'Model Browser',
+                'features.browser.desc': 'Explore and discover new models. Filter by quantization, size, and compatibility with your hardware.',
+                'features.speed.title': 'Native Speed',
+                'features.speed.desc': 'Built on top of llama.cpp with Metal acceleration. Zero overhead, maximum tokens per second.',
+                'install.title': 'Ready to run?',
+                'install.requirements': 'Requires macOS 14.0+ and Apple Silicon (M1/M2/M3)',
+                'footer.license': 'MIT License',
+                'footer.issues': 'Report Issue'
+            },
+            zh: {
+                'hero.title': '边缘算力，触手可及',
+                'hero.subtitle': '专为 Apple Silicon 打造的本地 LLM 控制面板。<br class="hidden md:block">性能监控、模型管理、推理服务，一站搞定。',
+                'hero.getStarted': '开始使用',
+                'hero.viewSource': '查看源码',
+                'features.monitoring.title': '实时监控',
+                'features.monitoring.desc': '即时可视化 NPU、GPU 和 CPU 使用情况。追踪内存压力和温度状态，专为 M 系列芯片优化。',
+                'features.models.title': '模型管理',
+                'features.models.desc': '内置 aria2 高速下载器。轻松组织 GGUF 文件，管理存储空间。',
+                'features.presets.title': '智能预设',
+                'features.presets.desc': '一键配置 Llama 3、Mistral 和 Gemma。根据内存自动优化上下文窗口和 GPU 层数。',
+                'features.service.title': '服务控制',
+                'features.service.desc': '直接在界面启动、停止和重启 llama.cpp 服务。实时查看日志输出。',
+                'features.browser.title': '模型浏览',
+                'features.browser.desc': '探索和发现新模型。按量化精度、大小和硬件兼容性筛选。',
+                'features.speed.title': '原生性能',
+                'features.speed.desc': '基于 llama.cpp 构建，Metal 加速。零开销，极致推理速度。',
+                'install.title': '准备好了吗？',
+                'install.requirements': '需要 macOS 14.0+ 和 Apple Silicon (M1/M2/M3)',
+                'footer.license': 'MIT 许可证',
+                'footer.issues': '反馈问题'
+            }
+        };
+
+        let currentLang = localStorage.getItem('siliconlm-lang') || 'en';
+
+        function applyTranslations(lang) {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang][key]) {
+                    if (el.getAttribute('data-i18n-html') === 'true') {
+                        el.innerHTML = translations[lang][key];
+                    } else {
+                        el.textContent = translations[lang][key];
+                    }
+                }
+            });
+            document.getElementById('langToggle').textContent = lang === 'en' ? '中文' : 'EN';
+            document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+        }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'zh' : 'en';
+            localStorage.setItem('siliconlm-lang', currentLang);
+            applyTranslations(currentLang);
+        }
+
+        applyTranslations(currentLang);
+    </script>
 </body>
 </html>
