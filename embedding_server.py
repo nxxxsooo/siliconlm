@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Union, List
 from collections import deque
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Lazy load mlx_embeddings to speed up startup
@@ -76,6 +77,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(HTTPException)
+async def openai_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": exc.detail,
+                "type": "invalid_request_error" if exc.status_code == 400 else "server_error",
+                "code": exc.status_code
+            }
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": str(exc),
+                "type": "server_error",
+                "code": 500
+            }
+        }
+    )
 
 
 # Model type to backend mapping
