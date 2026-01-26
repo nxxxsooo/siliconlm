@@ -8,9 +8,10 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import psutil
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -18,11 +19,86 @@ from download_manager import download_manager, PRESET_MODELS
 
 app = FastAPI(title="SiliconLM")
 
+SETTINGS_FILE = Path(__file__).parent / "settings.json"
+DEFAULT_SETTINGS = {
+    "models_dir": "~/.lmstudio/models",
+    "services": {
+        "mlx_embeddings": {"enabled": True, "port": 8766},
+        "lmstudio": {"enabled": True, "port": 1234},
+        "opencode": {"enabled": True}
+    },
+    "embedding": {"max_batch_size": 32, "max_input_chars": 8192}
+}
+
+def load_settings():
+    if SETTINGS_FILE.exists():
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    return DEFAULT_SETTINGS.copy()
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=2)
+
+_settings = load_settings()
+
+PROXY_TARGETS = {
+    "embeddings": "http://localhost:8766",
+    "lmstudio": "http://localhost:1234",
+}
+
+EMBEDDING_MODELS = {"embed", "gte-", "bge-", "e5-", "mxbai-embed", "nomic-embed"}
+
+
+def _is_embedding_request(path: str, body: dict = None) -> bool:
+    if "/embeddings" in path:
+        return True
+    if body and body.get("model"):
+        model = body["model"].lower()
+        return any(p in model for p in EMBEDDING_MODELS)
+    return False
+
+
+async def _proxy_request(request: Request, target_url: str) -> Response:
+    async with httpx.AsyncClient(timeout=300.0, trust_env=False) as client:
+        url = f"{target_url}{request.url.path}"
+        if request.url.query:
+            url = f"{url}?{request.url.query}"
+        
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        
+        body = await request.body()
+        
+        response = await client.request(
+            method=request.method,
+            url=url,
+            headers=headers,
+            content=body,
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+        )
+
 # Cache for expensive computations
 _cache = {
     "models": {"data": [], "total_size": 0, "timestamp": 0},
 }
-CACHE_TTL = 30  # seconds - only recalculate every 30s
+CACHE_TTL = 30
+
+# LMStudio request tracking
+_lmstudio_stats = {
+    "requests": 0,
+    "tokens": 0,
+    "start_time": time.time(),
+}
+
+# Combined API activity log (both embeddings and LMStudio)
+from collections import deque
+_activity_log = deque(maxlen=50)
 
 # Start download manager on app startup
 @app.on_event("startup")
@@ -39,7 +115,11 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Configuration
-MODELS_DIR = Path.home() / ".lmstudio" / "models"
+def get_models_dir():
+    models_path = _settings.get("models_dir", "~/.lmstudio/models")
+    return Path(models_path).expanduser()
+
+MODELS_DIR = get_models_dir()
 DASHBOARD_DIR = Path(__file__).parent
 
 # Service definitions
@@ -121,7 +201,7 @@ def get_service_status(name: str) -> dict:
             except Exception:
                 pass
         
-        # LMStudio metrics - fetch model info
+        # LMStudio metrics - fetch model info + proxy stats
         if name == "lmstudio":
             try:
                 import urllib.request
@@ -130,11 +210,16 @@ def get_service_status(name: str) -> dict:
                     models = models_data.get("data", [])
                     status["metrics"] = {
                         "models_loaded": len(models),
-                        "current_model": models[0]["id"] if models else None,
-                        "models": [m["id"].split("/")[-1][:25] for m in models[:3]]
+                        "total_requests": _lmstudio_stats["requests"],
+                        "total_tokens": _lmstudio_stats["tokens"],
+                        "models": [m["id"][:25] for m in models[:5]]
                     }
             except Exception:
-                status["metrics"] = {"models_loaded": 0, "current_model": None}
+                status["metrics"] = {
+                    "models_loaded": 0,
+                    "total_requests": _lmstudio_stats["requests"],
+                    "total_tokens": _lmstudio_stats["tokens"],
+                }
         
         # OpenCode metrics - process info
         if name == "opencode" and status["pid"]:
@@ -392,14 +477,35 @@ async def index():
 
 @app.get("/api/status")
 async def get_status():
-    """Get all service statuses and system stats"""
     services = [get_service_status(name) for name in SERVICES]
     return {
         "services": services,
         "system": get_system_stats(),
         "models": get_downloaded_models(),
-        "downloads": detect_active_downloads()
+        "downloads": detect_active_downloads(),
     }
+
+
+@app.get("/api/activity")
+async def get_activity():
+    return {"activity": list(_activity_log)}
+
+
+@app.get("/api/settings")
+async def get_settings():
+    return _settings
+
+
+@app.put("/api/settings")
+async def update_settings(request: Request):
+    global _settings
+    try:
+        new_settings = await request.json()
+        _settings.update(new_settings)
+        save_settings(_settings)
+        return {"success": True, "settings": _settings}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 
 @app.post("/api/service/{name}/start")
@@ -413,15 +519,26 @@ async def start_service(name: str):
         return {"success": False, "message": service.get("note", "Cannot start this service")}
 
     try:
-        cmd = service["start_cmd"][0]
-        script = f'''
-        tell application "Terminal"
-            activate
-            do script "{cmd}"
-        end tell
-        '''
-        subprocess.run(["osascript", "-e", script], check=True)
-        return {"success": True, "message": f"Starting {name} in Terminal"}
+        if service.get("start_in_terminal"):
+            cmd = " ".join(service["start_cmd"])
+            script = f'''
+            tell application "Terminal"
+                activate
+                do script "{cmd}"
+            end tell
+            '''
+            subprocess.run(["osascript", "-e", script], check=True)
+            return {"success": True, "message": f"Starting {name} in Terminal"}
+        else:
+            log_file = Path(f"/tmp/{name}.log")
+            with open(log_file, "a") as f:
+                subprocess.Popen(
+                    service["start_cmd"],
+                    stdout=f,
+                    stderr=f,
+                    start_new_session=True
+                )
+            return {"success": True, "message": f"Started {name} (log: {log_file})"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -566,6 +683,138 @@ async def delete_download(req: DownloadRequest):
     """Cancel download and delete files"""
     success = download_manager.remove_download(req.repo_id, delete_files=True)
     return {"success": success}
+
+
+# ============================================================================
+# OpenAI-compatible Proxy Routes (/v1/*)
+# Automatically routes embeddings to MLX (8766), others to LMStudio (1234)
+# ============================================================================
+
+@app.api_route("/v1/embeddings", methods=["GET", "POST"])
+async def proxy_embeddings(request: Request):
+    body = {}
+    if request.method == "POST":
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+    
+    start_time = time.time()
+    response = await _proxy_request(request, PROXY_TARGETS["embeddings"])
+    latency_ms = (time.time() - start_time) * 1000
+    
+    try:
+        resp_data = json.loads(response.body)
+        usage = resp_data.get("usage", {})
+        tokens = usage.get("total_tokens", 0)
+        dimensions = usage.get("dimensions", 0)
+        model = body.get("model", resp_data.get("model", "unknown"))
+        input_text = body.get("input", "")
+        if isinstance(input_text, list):
+            input_text = input_text[0] if input_text else ""
+        preview = (input_text[:40] + "...") if len(input_text) > 40 else input_text
+        
+        _activity_log.append({
+            "time": time.strftime("%H:%M:%S"),
+            "type": "embed",
+            "model": model.split("/")[-1][:25],
+            "latency_ms": round(latency_ms, 1),
+            "tokens": tokens,
+            "dimensions": dimensions,
+            "preview": preview,
+        })
+    except Exception:
+        pass
+    
+    return response
+
+
+@app.api_route("/v1/models", methods=["GET"])
+async def proxy_models(request: Request):
+    async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+        results = {"object": "list", "data": []}
+        
+        # Get embedding models from MLX server
+        try:
+            r = await client.get(f"{PROXY_TARGETS['embeddings']}/v1/models")
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                for m in data:
+                    m["type"] = "embedding"
+                results["data"].extend(data)
+        except Exception:
+            pass
+        
+        # Get chat models from LMStudio (filter out embedding models)
+        try:
+            r = await client.get(f"{PROXY_TARGETS['lmstudio']}/v1/models")
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                for m in data:
+                    model_id = m.get("id", "").lower()
+                    # Skip embedding models - they're served by MLX
+                    if any(p in model_id for p in EMBEDDING_MODELS):
+                        continue
+                    m["type"] = "chat"
+                    results["data"].append(m)
+        except Exception:
+            pass
+        
+        return results
+
+
+@app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_v1(request: Request, path: str):
+    body = {}
+    if request.method in ["POST", "PUT"]:
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+    
+    start_time = time.time()
+    is_embedding = _is_embedding_request(path, body)
+    
+    if is_embedding:
+        target = PROXY_TARGETS["embeddings"]
+    else:
+        target = PROXY_TARGETS["lmstudio"]
+    
+    response = await _proxy_request(request, target)
+    latency_ms = (time.time() - start_time) * 1000
+    
+    # Log activity
+    try:
+        resp_data = json.loads(response.body)
+        tokens = resp_data.get("usage", {}).get("total_tokens", 0)
+        model = body.get("model", resp_data.get("model", "unknown"))
+        
+        if is_embedding:
+            input_text = body.get("input", "")
+            if isinstance(input_text, list):
+                input_text = input_text[0] if input_text else ""
+            preview = (input_text[:40] + "...") if len(input_text) > 40 else input_text
+            req_type = "embed"
+        else:
+            _lmstudio_stats["requests"] += 1
+            _lmstudio_stats["tokens"] += tokens
+            messages = body.get("messages", [])
+            last_msg = messages[-1]["content"] if messages else ""
+            preview = (last_msg[:40] + "...") if len(last_msg) > 40 else last_msg
+            req_type = "chat"
+        
+        _activity_log.append({
+            "time": time.strftime("%H:%M:%S"),
+            "type": req_type,
+            "model": model.split("/")[-1][:25],
+            "latency_ms": round(latency_ms, 1),
+            "tokens": tokens,
+            "preview": preview,
+        })
+    except Exception:
+        pass
+    
+    return response
 
 
 if __name__ == "__main__":

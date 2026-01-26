@@ -1,0 +1,20 @@
+{
+  "models_dir": "~/.lmstudio/models",
+  "services": {
+    "mlx_embeddings": {
+      "enabled": true,
+      "port": 8766
+    },
+    "lmstudio": {
+      "enabled": true,
+      "port": 1234
+    },
+    "opencode": {
+      "enabled": true
+    }
+  },
+  "embedding": {
+    "max_batch_size": 32,
+    "max_input_chars": 8192
+  }
+}

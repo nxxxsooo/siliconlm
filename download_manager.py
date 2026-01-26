@@ -44,6 +44,53 @@ def _should_ignore(filename: str) -> bool:
     return False
 
 
+# Embedding model detection patterns
+EMBEDDING_PATTERNS = ["embed", "gte-", "bge-", "e5-", "mxbai-embed", "nomic-embed"]
+
+
+def _is_embedding_model(repo_id: str) -> bool:
+    """Check if repo is an embedding model based on name"""
+    name = repo_id.lower()
+    return any(p in name for p in EMBEDDING_PATTERNS)
+
+
+def _search_gguf_version(repo_id: str) -> Optional[str]:
+    """Search HuggingFace for GGUF version of a model"""
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        
+        # Extract model name from repo_id (e.g., "mlx-community/Qwen3-Embedding-8B-4bit-DWQ" -> "Qwen3-Embedding-8B")
+        model_name = repo_id.split("/")[-1]
+        # Remove common suffixes
+        for suffix in ["-4bit-DWQ", "-4bit", "-8bit", "-DWQ", "-mlx", "-MLX"]:
+            model_name = model_name.replace(suffix, "")
+        
+        # Search for GGUF versions
+        search_query = f"{model_name} GGUF"
+        results = api.list_models(search=search_query, limit=10, sort="downloads", direction=-1)
+        
+        for model in results:
+            model_id = model.id.lower()
+            # Check if it's a GGUF version (contains gguf in name or org)
+            if "gguf" in model_id and any(p in model_id for p in EMBEDDING_PATTERNS):
+                # Prefer certain orgs
+                preferred_orgs = ["lmstudio-community", "bartowski", "nomic-ai", "sentence-transformers"]
+                org = model.id.split("/")[0].lower()
+                if org in preferred_orgs or "gguf" in model.id.lower():
+                    return model.id
+        
+        # If no preferred org found, return first GGUF result
+        for model in results:
+            if "gguf" in model.id.lower():
+                return model.id
+        
+        return None
+    except Exception as e:
+        print(f"GGUF search failed: {e}")
+        return None
+
+
 def _download_with_aria2(url: str, output_path: Path, token: str) -> bool:
     """Download a file using aria2c - handles large files without 2GB limit"""
     output_path.parent.mkdir(parents=True, exist_ok=True)

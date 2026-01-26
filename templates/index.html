@@ -50,7 +50,37 @@
         <!-- Header -->
         <div class="flex items-center justify-between mb-6">
             <h1 class="text-2xl font-bold text-white">SiliconLM</h1>
-            <span id="refresh-indicator" class="text-xs text-gray-500"></span>
+            <div class="flex items-center gap-3">
+                <span id="refresh-indicator" class="text-xs text-gray-500"></span>
+                <button onclick="toggleSettings()" class="text-gray-400 hover:text-white transition-colors" title="Settings">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="mb-6 hidden">
+            <div class="card rounded-xl p-4">
+                <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">Settings</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs text-gray-500 block mb-1">Models Directory</label>
+                        <input type="text" id="settings-models-dir" 
+                               class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 block mb-2">Services</label>
+                        <div class="space-y-2" id="settings-services"></div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="saveSettings()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white">Save</button>
+                        <button onclick="toggleSettings()" class="bg-dark-600 hover:bg-dark-500 px-4 py-2 rounded-lg text-sm text-gray-300">Cancel</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- System Stats -->
@@ -86,6 +116,19 @@
         <div class="mb-6">
             <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Services</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="services-container"></div>
+        </div>
+
+        <!-- Embeddings Activity (from 8766) -->
+        <div id="activity-section" class="mb-6 hidden">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">Embeddings Activity</h2>
+                <button id="activity-toggle" onclick="toggleActivity()" class="text-xs text-gray-500 hover:text-gray-300">
+                    Show more ▼
+                </button>
+            </div>
+            <div class="card rounded-xl p-4">
+                <div id="activity-log" class="space-y-1 max-h-28 overflow-hidden font-mono text-xs transition-all duration-300"></div>
+            </div>
         </div>
 
         <!-- Download Models -->
@@ -186,10 +229,9 @@
         }
 
         function renderServiceMetrics(name, m) {
-            // MLX Embeddings - show requests, tokens, latency
             if (name === 'mlx_embeddings') {
                 return `
-                    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                    <div class="grid grid-cols-3 gap-2 text-center">
                         <div class="bg-dark-700 rounded-lg p-2">
                             <div class="text-lg font-bold text-accent">${m.total_requests || 0}</div>
                             <div class="text-xs text-gray-500">Requests</div>
@@ -203,41 +245,31 @@
                             <div class="text-xs text-gray-500">Latency</div>
                         </div>
                     </div>
-                    ${m.current_model ? `<div class="text-xs text-gray-500 mb-2">Model: ${m.current_model.split('/').pop()}</div>` : ''}
-                    ${m.recent_requests && m.recent_requests.length > 0 ? `
-                        <div class="bg-dark-700 rounded-lg p-2 mb-3 max-h-20 overflow-y-auto">
-                            ${m.recent_requests.slice(-3).reverse().map(r => `
-                                <div class="text-xs text-gray-400 truncate">
-                                    <span class="text-gray-600">${r.time}</span>
-                                    <span class="text-accent">${r.latency_ms}ms</span>
-                                    <span class="text-gray-500">${r.preview}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : ''}
                 `;
             }
             
-            // LMStudio - show loaded models
             if (name === 'lmstudio') {
                 return `
-                    <div class="grid grid-cols-2 gap-2 mb-3 text-center">
+                    <div class="grid grid-cols-3 gap-2 text-center">
                         <div class="bg-dark-700 rounded-lg p-2">
-                            <div class="text-lg font-bold text-accent">${m.models_loaded || 0}</div>
-                            <div class="text-xs text-gray-500">Models</div>
+                            <div class="text-lg font-bold text-accent">${m.total_requests || 0}</div>
+                            <div class="text-xs text-gray-500">Requests</div>
                         </div>
-                        <div class="bg-dark-700 rounded-lg p-2 text-left">
-                            <div class="text-xs text-gray-400 truncate">${m.current_model ? m.current_model.split('/').pop() : 'No model'}</div>
-                            <div class="text-xs text-gray-500">Active</div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-green-400">${m.total_tokens || 0}</div>
+                            <div class="text-xs text-gray-500">Tokens</div>
+                        </div>
+                        <div class="bg-dark-700 rounded-lg p-2">
+                            <div class="text-lg font-bold text-purple-400">${m.models_loaded || 0}</div>
+                            <div class="text-xs text-gray-500">Models</div>
                         </div>
                     </div>
                 `;
             }
             
-            // OpenCode - show memory, uptime, cpu
             if (name === 'opencode') {
                 return `
-                    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                    <div class="grid grid-cols-3 gap-2 text-center">
                         <div class="bg-dark-700 rounded-lg p-2">
                             <div class="text-lg font-bold text-accent">${m.memory_mb || 0}MB</div>
                             <div class="text-xs text-gray-500">Memory</div>
@@ -279,7 +311,7 @@
                 const m = s.metrics || {};
                 
                 return `
-                <div class="card rounded-xl p-4 transition-all ${hasMetrics ? 'col-span-full md:col-span-1' : ''}">
+                <div class="card rounded-xl p-4 transition-all flex flex-col">
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-2">
                             <div class="status-dot ${s.running ? 'status-running' : 'status-stopped'}"></div>
@@ -289,8 +321,10 @@
                             ${s.port ? 'Port ' + s.port : ''}${s.pid ? ' PID ' + s.pid : ''}
                         </span>
                     </div>
-                    ${hasMetrics ? renderServiceMetrics(s.name, m) : ''}
-                    <div class="flex gap-2">
+                    <div class="flex-1">
+                        ${hasMetrics ? renderServiceMetrics(s.name, m) : ''}
+                    </div>
+                    <div class="flex gap-2 mt-auto pt-2">
                         ${s.running ? `
                             <button onclick="serviceAction('${s.name}', 'stop')"
                                     class="flex-1 bg-red-900/50 hover:bg-red-900 text-red-400 px-3 py-1.5 rounded-lg text-xs font-medium transition-all">
@@ -518,14 +552,57 @@
             renderModels(allModels, true);
         }
 
+        function renderActivity(requests, dim) {
+            const section = document.getElementById('activity-section');
+            const container = document.getElementById('activity-log');
+            
+            if (!requests || requests.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+            
+            section.classList.remove('hidden');
+            container.innerHTML = requests.slice().reverse().map(r => `
+                <div class="flex items-center gap-2 py-1 border-b border-dark-700 last:border-0">
+                    <span class="text-gray-600 w-14">${r.time}</span>
+                    <span class="text-purple-400 w-16 text-right">${r.latency_ms}ms</span>
+                    <span class="text-yellow-400 w-12">${dim}d</span>
+                    <span class="text-gray-400 w-28 truncate">${r.model}</span>
+                    <span class="text-gray-500 flex-1 truncate">${r.preview}</span>
+                </div>
+            `).join('');
+        }
+
+        let activityExpanded = false;
+        function toggleActivity() {
+            const log = document.getElementById('activity-log');
+            const btn = document.getElementById('activity-toggle');
+            activityExpanded = !activityExpanded;
+            if (activityExpanded) {
+                log.classList.remove('max-h-28', 'overflow-hidden');
+                log.classList.add('max-h-96', 'overflow-y-auto');
+                btn.textContent = 'Show less ▲';
+            } else {
+                log.classList.remove('max-h-96', 'overflow-y-auto');
+                log.classList.add('max-h-28', 'overflow-hidden');
+                btn.textContent = 'Show more ▼';
+            }
+        }
+
         async function fetchStatus() {
             try {
-                const [statusRes, downloadsRes] = await Promise.all([
+                const [statusRes, downloadsRes, embedRes] = await Promise.all([
                     fetch('/api/status'),
-                    fetch('/api/downloads')
+                    fetch('/api/downloads'),
+                    fetch('http://localhost:8766/api/metrics').catch(() => null)
                 ]);
                 const status = await statusRes.json();
                 const downloads = await downloadsRes.json();
+                
+                if (embedRes && embedRes.ok) {
+                    const embedMetrics = await embedRes.json();
+                    renderActivity(embedMetrics.recent_requests || [], embedMetrics.embedding_dim || 0);
+                }
 
                 renderMachineInfo(status.system?.machine);
                 
@@ -631,6 +708,69 @@
         input.addEventListener('blur', () => setTimeout(() => suggestions.classList.add('hidden'), 200));
         input.addEventListener('keypress', (e) => { if (e.key === 'Enter') startDownload(); });
         function selectSuggestion(repo) { input.value = repo; suggestions.classList.add('hidden'); }
+
+        let currentSettings = {};
+        
+        function toggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            if (panel.classList.contains('hidden')) {
+                loadSettings();
+                panel.classList.remove('hidden');
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+        
+        async function loadSettings() {
+            const res = await fetch('/api/settings');
+            currentSettings = await res.json();
+            
+            document.getElementById('settings-models-dir').value = currentSettings.models_dir || '~/.lmstudio/models';
+            
+            const servicesContainer = document.getElementById('settings-services');
+            const services = currentSettings.services || {};
+            servicesContainer.innerHTML = Object.entries(services).map(([name, config]) => `
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="svc-${name}" ${config.enabled ? 'checked' : ''} 
+                           class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent focus:ring-accent">
+                    <span class="text-sm text-gray-300">${name}</span>
+                    ${config.port ? `<span class="text-xs text-gray-500">:${config.port}</span>` : ''}
+                </label>
+            `).join('');
+        }
+        
+        async function saveSettings() {
+            const modelsDir = document.getElementById('settings-models-dir').value;
+            const services = {};
+            
+            Object.keys(currentSettings.services || {}).forEach(name => {
+                const checkbox = document.getElementById(`svc-${name}`);
+                services[name] = {
+                    ...currentSettings.services[name],
+                    enabled: checkbox ? checkbox.checked : true
+                };
+            });
+            
+            const newSettings = {
+                ...currentSettings,
+                models_dir: modelsDir,
+                services: services
+            };
+            
+            const res = await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSettings)
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast('Settings saved', 'success');
+                toggleSettings();
+            } else {
+                showToast('Failed to save: ' + data.message, 'error');
+            }
+        }
 
         fetchStatus();
         setInterval(fetchStatus, 2000);

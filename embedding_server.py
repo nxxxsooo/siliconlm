@@ -32,6 +32,7 @@ class Metrics:
     recent_requests: deque = field(default_factory=lambda: deque(maxlen=50))
     start_time: float = field(default_factory=time.time)
     current_model: Optional[str] = None
+    embedding_dim: int = 0
     
     def record_request(self, model: str, tokens: int, latency_ms: float, input_preview: str):
         self.total_requests += 1
@@ -60,6 +61,7 @@ class Metrics:
             "avg_latency_ms": round(self.avg_latency_ms, 1),
             "uptime_seconds": round(self.uptime_seconds),
             "current_model": self.current_model,
+            "embedding_dim": self.embedding_dim,
             "recent_requests": list(self.recent_requests)
         }
 
@@ -75,13 +77,48 @@ app.add_middleware(
 )
 
 
+# Model type to backend mapping
+MLX_SUPPORTED_TYPES = {"bert", "xlm-roberta", "roberta"}
+# sentence-transformers supported architectures (encoder models)
+ST_SUPPORTED_TYPES = {"bert", "xlm-roberta", "roberta", "mpnet", "distilbert"}
+# Unsupported: decoder-only models like qwen3, llama - need mlx-lm (future)
+
+def _get_model_info(model_path: Path) -> dict:
+    """Determine which backend can handle this model, or None if unsupported."""
+    config_path = model_path / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        model_type = config.get("model_type", "").lower()
+        has_safetensors = any(model_path.glob("*.safetensors"))
+        has_pytorch = any(model_path.glob("*.bin")) or any(model_path.glob("*.pt"))
+        
+        # MLX backend: safetensors + supported encoder architecture
+        if has_safetensors and model_type in MLX_SUPPORTED_TYPES:
+            return {"model_type": model_type, "backend": "mlx"}
+        
+        # sentence-transformers: pytorch weights + supported encoder architecture
+        if has_pytorch and model_type in ST_SUPPORTED_TYPES:
+            return {"model_type": model_type, "backend": "sentence-transformers"}
+        
+        # Fallback: try sentence-transformers if it has pytorch weights (may fail)
+        if has_pytorch:
+            return {"model_type": model_type, "backend": "sentence-transformers"}
+        
+        # MLX-quantized decoder models (qwen3, llama, etc.) - NOT YET SUPPORTED
+        # Would need mlx-lm backend with custom pooling
+        return None
+    except Exception:
+        return None
+
+
 def discover_embedding_models() -> List[dict]:
-    """Find embedding models in the models directory"""
     models = []
     if not MODELS_DIR.exists():
         return models
     
-    # Look for models with 'embed' in name or specific known patterns
     embedding_patterns = ["embed", "gte-", "bge-", "e5-", "mxbai-embed"]
     
     for org_dir in MODELS_DIR.iterdir():
@@ -95,47 +132,56 @@ def discover_embedding_models() -> List[dict]:
             is_embedding = any(p in model_name for p in embedding_patterns)
             
             if is_embedding:
-                # Check for model files
-                has_safetensors = any(model_dir.glob("*.safetensors"))
-                has_config = (model_dir / "config.json").exists()
+                info = _get_model_info(model_dir)
+                if not info:
+                    continue
                 
-                if has_safetensors or has_config:
-                    repo_id = f"{org_dir.name}/{model_dir.name}"
-                    size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
-                    models.append({
-                        "id": repo_id,
-                        "name": model_dir.name,
-                        "size_bytes": size,
-                        "path": str(model_dir)
-                    })
+                repo_id = f"{org_dir.name}/{model_dir.name}"
+                size = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
+                models.append({
+                    "id": repo_id,
+                    "name": model_dir.name,
+                    "size_bytes": size,
+                    "path": str(model_dir),
+                    "backend": info["backend"]
+                })
     
     return models
 
 
+_st_models = {}
+
 def get_model(model_id: str):
-    """Load model with caching"""
-    global _model_cache
+    global _model_cache, _st_models
     
     with _model_lock:
         if model_id in _model_cache:
-            return _model_cache[model_id]
+            return _model_cache[model_id], "mlx"
+        if model_id in _st_models:
+            return _st_models[model_id], "st"
         
-        # Try to load model
+        local_path = MODELS_DIR / model_id
+        info = _get_model_info(local_path) if local_path.exists() else None
+        backend = info["backend"] if info else "mlx"
+        
         try:
-            from mlx_embeddings import load_model
-            
-            # Check if it's a local path or HF repo
-            local_path = MODELS_DIR / model_id
-            if local_path.exists():
-                model = load_model(str(local_path))
+            if backend == "mlx":
+                from mlx_embeddings import load
+                if local_path.exists():
+                    model, tokenizer = load(str(local_path))
+                else:
+                    model, tokenizer = load(model_id)
+                _model_cache[model_id] = (model, tokenizer)
+                metrics.current_model = model_id
+                return (model, tokenizer), "mlx"
             else:
-                model = load_model(model_id)
-            
-            _model_cache[model_id] = model
-            metrics.current_model = model_id
-            return model
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer(str(local_path) if local_path.exists() else model_id)
+                _st_models[model_id] = model
+                metrics.current_model = model_id
+                return model, "st"
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to load model: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 # Request/Response models
@@ -173,50 +219,71 @@ def list_models_alt():
     return list_models()
 
 
+MAX_BATCH_SIZE = 32
+MAX_INPUT_CHARS = 8192
+_inference_lock = threading.Lock()
+
 @app.post("/v1/embeddings")
 def create_embeddings(request: EmbeddingRequest):
-    """Create embeddings - OpenAI compatible"""
     start_time = time.time()
-    
-    # Normalize input to list
     inputs = request.input if isinstance(request.input, list) else [request.input]
     
-    try:
-        from mlx_embeddings import embed
-        
-        model = get_model(request.model)
-        embeddings = embed(model, inputs)
-        
-        # Convert to list format
-        if hasattr(embeddings, 'tolist'):
-            embeddings_list = embeddings.tolist()
-        else:
-            embeddings_list = [e.tolist() if hasattr(e, 'tolist') else list(e) for e in embeddings]
-        
-        # Calculate tokens (rough estimate: 1 token per 4 chars)
-        total_chars = sum(len(t) for t in inputs)
-        estimated_tokens = total_chars // 4
-        
-        latency_ms = (time.time() - start_time) * 1000
-        
-        # Record metrics
-        preview = inputs[0] if inputs else ""
-        metrics.record_request(request.model, estimated_tokens, latency_ms, preview)
-        
-        return {
-            "object": "list",
-            "data": [
-                {"object": "embedding", "embedding": emb, "index": i}
-                for i, emb in enumerate(embeddings_list)
-            ],
-            "model": request.model,
-            "usage": {
-                "prompt_tokens": estimated_tokens,
-                "total_tokens": estimated_tokens
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if len(inputs) > MAX_BATCH_SIZE:
+        raise HTTPException(status_code=400, detail=f"Batch size {len(inputs)} exceeds max {MAX_BATCH_SIZE}")
+    
+    inputs = [t[:MAX_INPUT_CHARS] for t in inputs]
+    
+    with _inference_lock:
+        try:
+            import gc
+            model_data, backend = get_model(request.model)
+            
+            if backend == "mlx":
+                from mlx_embeddings import generate
+                import mlx.core as mx
+                
+                model, tokenizer = model_data
+                embeddings = generate(model, tokenizer, inputs)
+                mx.eval(embeddings)
+                
+                if embeddings.ndim == 3:
+                    embeddings = mx.mean(embeddings, axis=1)
+                elif embeddings.ndim == 2 and len(inputs) == 1 and embeddings.shape[0] > 1:
+                    embeddings = mx.mean(embeddings, axis=0, keepdims=True)
+                
+                mx.eval(embeddings)
+                embeddings_list = embeddings.tolist()
+                del embeddings
+            else:
+                embeddings = model_data.encode(inputs, convert_to_numpy=True)
+                embeddings_list = embeddings.tolist()
+                del embeddings
+            
+            dim = len(embeddings_list[0]) if embeddings_list else 0
+            gc.collect()
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    total_chars = sum(len(t) for t in inputs)
+    estimated_tokens = max(1, total_chars // 4)
+    latency_ms = (time.time() - start_time) * 1000
+    
+    preview = inputs[0] if inputs else ""
+    metrics.record_request(request.model, estimated_tokens, latency_ms, preview)
+    metrics.embedding_dim = dim
+    
+    return {
+        "object": "list",
+        "data": [
+            {"object": "embedding", "embedding": emb, "index": i}
+            for i, emb in enumerate(embeddings_list)
+        ],
+        "model": request.model,
+        "usage": {"prompt_tokens": estimated_tokens, "total_tokens": estimated_tokens, "dimensions": dim}
+    }
 
 
 @app.post("/embeddings")
