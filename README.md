@@ -1,6 +1,6 @@
 # SiliconLM
 
-[中文文档](README_CN.md)
+[中文文档](README_CN.md) | [Website](https://mjshao.fun/siliconlm/)
 
 Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings, and downloads.
 

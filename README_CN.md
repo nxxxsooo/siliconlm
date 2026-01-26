@@ -1,5 +1,7 @@
 # SiliconLM
 
+[English](README.md) | [网站](https://mjshao.fun/siliconlm/)
+
 Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量和下载。
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-black?logo=apple)
