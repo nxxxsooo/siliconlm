@@ -279,6 +279,16 @@
             container.innerHTML = html;
         }
 
+        function formatDuration(seconds) {
+            if (!seconds || seconds < 0) return '--';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) return `${h}h ${m}m`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        }
+
         function renderActiveDownloads(activeList) {
             const section = document.getElementById('active-downloads-section');
             const container = document.getElementById('active-downloads');
@@ -291,8 +301,11 @@
             section.classList.remove('hidden');
             container.innerHTML = activeList.map(d => {
                 const speedMB = d.speed ? (d.speed / 1024 / 1024).toFixed(1) : '0';
+                const avgSpeedMB = d.avg_speed ? (d.avg_speed / 1024 / 1024).toFixed(1) : null;
                 const sizeMB = (d.current_size / 1024 / 1024).toFixed(0);
                 const totalMB = d.total_size ? (d.total_size / 1024 / 1024).toFixed(0) : '?';
+                const elapsed = formatDuration(d.elapsed);
+                const eta = formatDuration(d.eta);
                 
                 return `
                 <div class="card rounded-xl p-4 border-l-4 border-l-accent">
@@ -304,7 +317,11 @@
                         <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-400">${d.status}</span>
                     </div>
                     <div class="text-sm text-gray-400 mb-2">
-                        ${sizeMB} / ${totalMB} MB · <span class="text-accent">${speedMB} MB/s</span>
+                        ${sizeMB} / ${totalMB} MB · <span class="text-accent">${speedMB} MB/s</span>${avgSpeedMB ? ` · avg ${avgSpeedMB} MB/s` : ''}
+                    </div>
+                    <div class="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>Elapsed: ${elapsed}</span>
+                        <span>ETA: ${eta}</span>
                     </div>
                     <div class="bg-dark-700 rounded-full h-1.5 overflow-hidden mb-3">
                         <div class="progress-bar h-full transition-all duration-500" style="width: ${d.progress}%"></div>

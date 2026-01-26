@@ -163,6 +163,7 @@ class DownloadTask:
     _process: Optional[multiprocessing.Process] = field(default=None, repr=False)
     _status_queue: Optional[multiprocessing.Queue] = field(default=None, repr=False)
     created_at: float = field(default_factory=time.time)
+    started_at: Optional[float] = None  # When download actually started
     _restart_count: int = field(default=0, repr=False)  # Track auto-restarts
     
     @property
@@ -174,6 +175,30 @@ class DownloadTask:
         models_dir = Path.home() / ".lmstudio" / "models"
         return models_dir / self.repo_id.replace("/", "/")
     
+    @property
+    def elapsed_seconds(self) -> Optional[float]:
+        """Time since download started"""
+        if self.started_at and self.status == DownloadStatus.DOWNLOADING:
+            return time.time() - self.started_at
+        return None
+    
+    @property
+    def avg_speed(self) -> Optional[float]:
+        """Average speed since start (bytes/sec)"""
+        elapsed = self.elapsed_seconds
+        if elapsed and elapsed > 0 and self.current_size > 0:
+            return self.current_size / elapsed
+        return None
+    
+    @property
+    def eta_seconds(self) -> Optional[float]:
+        """Estimated seconds remaining"""
+        if self.total_size and self.speed and self.speed > 0:
+            remaining = self.total_size - self.current_size
+            if remaining > 0:
+                return remaining / self.speed
+        return None
+    
     def to_dict(self) -> dict:
         return {
             "repo_id": self.repo_id,
@@ -183,6 +208,9 @@ class DownloadTask:
             "current_size": self.current_size,
             "total_size": self.total_size,
             "speed": self.speed,
+            "avg_speed": self.avg_speed,
+            "elapsed": self.elapsed_seconds,
+            "eta": self.eta_seconds,
             "error": self.error,
             "path": str(self.local_path),
         }
@@ -412,6 +440,8 @@ class DownloadManager:
         """Start downloading a model in a separate process (can be terminated)"""
         task.status = DownloadStatus.DOWNLOADING
         task.error = None
+        if task.started_at is None:
+            task.started_at = time.time()  # Only set on first start, not resume
         
         # Create a queue for the process to report status back
         task._status_queue = multiprocessing.Queue()
