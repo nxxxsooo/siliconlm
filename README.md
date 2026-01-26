@@ -1,5 +1,7 @@
 # SiliconLM
 
+[中文文档](README_CN.md)
+
 Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings, and downloads.
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-black?logo=apple)
