@@ -155,6 +155,9 @@ def discover_embedding_models() -> List[dict]:
 
 _st_models = {}
 _mlx_lm_models = {}
+_gpu_lock = threading.Lock()  # Global lock for Metal GPU operations (MLX/mlx-lm)
+_st_lock = threading.Lock()   # Separate lock for sentence-transformers (CPU)
+
 
 def get_model(model_id: str):
     """Load model with appropriate backend. Returns (model_data, backend_type)."""
@@ -238,7 +241,65 @@ def list_models_alt():
 
 MAX_BATCH_SIZE = 32
 MAX_INPUT_CHARS = 8192
-_inference_lock = threading.Lock()
+
+
+def _run_mlx_inference(model_data, inputs):
+    """Run MLX embedding inference (GPU)."""
+    from mlx_embeddings import generate
+    import mlx.core as mx
+    
+    model, tokenizer = model_data
+    embeddings = generate(model, tokenizer, inputs)
+    mx.eval(embeddings)
+    
+    if embeddings.ndim == 3:
+        embeddings = mx.mean(embeddings, axis=1)
+    elif embeddings.ndim == 2 and len(inputs) == 1 and embeddings.shape[0] > 1:
+        embeddings = mx.mean(embeddings, axis=0, keepdims=True)
+    
+    mx.eval(embeddings)
+    result = embeddings.tolist()
+    del embeddings
+    return result
+
+
+def _run_mlx_lm_inference(model_data, inputs):
+    """Run mlx-lm embedding inference (GPU) - decoder model with mean pooling."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    
+    model, tokenizer = model_data
+    all_embeddings = []
+    
+    for text in inputs:
+        input_ids = mx.array([tokenizer.encode(text)])
+        h = model.model.embed_tokens(input_ids)
+        
+        T = h.shape[1]
+        mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
+        mask = mask.astype(h.dtype)
+        
+        for layer in model.model.layers:
+            h = layer(h, mask=mask)
+        
+        h = model.model.norm(h)
+        embedding = mx.mean(h, axis=1)
+        all_embeddings.append(embedding)
+    
+    embeddings = mx.concatenate(all_embeddings, axis=0)
+    mx.eval(embeddings)
+    result = embeddings.tolist()
+    del embeddings, all_embeddings
+    return result
+
+
+def _run_st_inference(model_data, inputs):
+    """Run sentence-transformers inference (CPU)."""
+    embeddings = model_data.encode(inputs, convert_to_numpy=True)
+    result = embeddings.tolist()
+    del embeddings
+    return result
+
 
 @app.post("/v1/embeddings")
 def create_embeddings(request: EmbeddingRequest):
@@ -250,74 +311,31 @@ def create_embeddings(request: EmbeddingRequest):
     
     inputs = [t[:MAX_INPUT_CHARS] for t in inputs]
     
-    backend = ""
-    with _inference_lock:
-        try:
-            import gc
-            model_data, backend = get_model(request.model)
-            
-            if backend == "mlx":
-                from mlx_embeddings import generate
-                import mlx.core as mx
-                
-                model, tokenizer = model_data
-                embeddings = generate(model, tokenizer, inputs)
-                mx.eval(embeddings)
-                
-                if embeddings.ndim == 3:
-                    embeddings = mx.mean(embeddings, axis=1)
-                elif embeddings.ndim == 2 and len(inputs) == 1 and embeddings.shape[0] > 1:
-                    embeddings = mx.mean(embeddings, axis=0, keepdims=True)
-                
-                mx.eval(embeddings)
-                embeddings_list = embeddings.tolist()
-                del embeddings
-            
-            elif backend == "mlx-lm":
-                # Decoder model embedding via last hidden state + mean pooling
-                import mlx.core as mx
-                import mlx.nn as nn
-                
-                model, tokenizer = model_data
-                all_embeddings = []
-                
-                for text in inputs:
-                    input_ids = mx.array([tokenizer.encode(text)])
-                    
-                    # Get token embeddings
-                    h = model.model.embed_tokens(input_ids)
-                    
-                    # Create causal mask
-                    T = h.shape[1]
-                    mask = nn.MultiHeadAttention.create_additive_causal_mask(T)
-                    mask = mask.astype(h.dtype)
-                    
-                    # Pass through transformer layers
-                    for layer in model.model.layers:
-                        h = layer(h, mask=mask)
-                    
-                    # Final layer norm + mean pooling
-                    h = model.model.norm(h)
-                    embedding = mx.mean(h, axis=1)
-                    all_embeddings.append(embedding)
-                
-                embeddings = mx.concatenate(all_embeddings, axis=0)
-                mx.eval(embeddings)
-                embeddings_list = embeddings.tolist()
-                del embeddings, all_embeddings
-            
-            else:  # sentence-transformers
-                embeddings = model_data.encode(inputs, convert_to_numpy=True)
-                embeddings_list = embeddings.tolist()
-                del embeddings
-            
-            dim = len(embeddings_list[0]) if embeddings_list else 0
-            gc.collect()
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=str(e))
+    # Load model (with model_lock to prevent concurrent loading)
+    model_data, backend = get_model(request.model)
+    
+    try:
+        import gc
+        
+        if backend in ("mlx", "mlx-lm"):
+            # GPU operations must be serialized to prevent Metal crashes
+            with _gpu_lock:
+                if backend == "mlx":
+                    embeddings_list = _run_mlx_inference(model_data, inputs)
+                else:
+                    embeddings_list = _run_mlx_lm_inference(model_data, inputs)
+        else:
+            # CPU operations can run with separate lock
+            with _st_lock:
+                embeddings_list = _run_st_inference(model_data, inputs)
+        
+        dim = len(embeddings_list[0]) if embeddings_list else 0
+        gc.collect()
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
     
     total_chars = sum(len(t) for t in inputs)
     estimated_tokens = max(1, total_chars // 4)
