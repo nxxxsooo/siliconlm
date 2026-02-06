@@ -74,6 +74,30 @@ brew install aria2
 open http://localhost:8765
 ```
 
+## 🤖 Let AI Set It Up
+
+Copy-paste this into your AI assistant (Claude Code, OpenCode, etc.) and it'll handle the rest:
+
+```
+Install and set up SiliconLM on my Mac.
+
+Repository: https://github.com/nxxxsooo/siliconlm
+
+Steps:
+1. Clone the repo (ask me where to put it)
+2. Create a Python venv and install requirements.txt
+3. Optionally install aria2 via brew for faster model downloads
+4. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+5. Add shell aliases to my ~/.zshrc for easy startup
+
+Requirements:
+- macOS 14.0+ with Apple Silicon (M series)
+- Python 3.10+
+- No API keys or secrets needed
+
+After setup, open http://localhost:8765 to verify the dashboard is running.
+```
+
 ## Shell Alias
 
 Add to `~/.zshrc`:

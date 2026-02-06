@@ -278,6 +278,49 @@ Requires macOS 14.0+ and Apple Silicon (M series)
         </div>
     </section>
 
+    <!-- For AI Agent Section -->
+    <section id="ai-agent" class="relative z-10 py-20 px-6">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-3xl md:text-4xl font-bold text-center mb-4" data-i18n="agent.title">For AI Agents</h2>
+            <p class="text-center text-apple-subtext mb-12" data-i18n="agent.subtitle">
+                Copy the prompt below and paste it into your AI assistant. It will handle the rest.
+            </p>
+
+            <div class="glass rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+                <div class="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/5">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-purple-500/80"></div>
+                        <span class="text-xs text-white/40 font-mono" data-i18n="agent.label">ai-agent-prompt</span>
+                    </div>
+                    <button onclick="copyAgentPrompt()" id="copyBtn" class="text-xs text-apple-subtext hover:text-white transition-colors px-3 py-1 rounded-full glass flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        <span id="copyText" data-i18n="agent.copy">Copy</span>
+                    </button>
+                </div>
+                <pre id="agentPrompt" class="p-6 md:p-8 text-sm leading-relaxed text-white/80 whitespace-pre-wrap overflow-x-auto select-all">Install and set up SiliconLM on my Mac.
+
+Repository: https://github.com/nxxxsooo/siliconlm
+
+Steps:
+1. Clone the repo to ~/Documents/sync/GitHub/siliconlm (or ask me where)
+2. Create a Python venv and install requirements.txt
+3. Optionally install aria2 via brew for faster model downloads
+4. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+5. Add shell aliases to my ~/.zshrc for easy startup
+
+Requirements:
+- macOS 14.0+ with Apple Silicon (M series)
+- Python 3.10+
+- No API keys or secrets needed
+
+After setup, open http://localhost:8765 to verify the dashboard is running.
+
+Shell alias to add:
+alias slm='cd ~/Documents/sync/GitHub/siliconlm &amp;&amp; nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&amp;1 &amp; nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&amp;1 &amp; sleep 2 &amp;&amp; open http://localhost:8765'</pre>
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
     <footer class="relative z-10 py-12 px-6 border-t border-white/5 bg-black/50 backdrop-blur-xl">
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
@@ -316,7 +359,11 @@ Requires macOS 14.0+ and Apple Silicon (M series)
                 'install.title': 'Ready to run?',
                 'install.requirements': 'Requires macOS 14.0+ and Apple Silicon (M series)',
                 'footer.license': 'MIT License',
-                'footer.issues': 'Report Issue'
+                'footer.issues': 'Report Issue',
+                'agent.title': 'For AI Agents',
+                'agent.subtitle': 'Copy the prompt below and paste it into your AI assistant. It will handle the rest.',
+                'agent.label': 'ai-agent-prompt',
+                'agent.copy': 'Copy'
             },
             zh: {
                 'hero.title': '边缘算力，触手可及',
@@ -338,7 +385,11 @@ Requires macOS 14.0+ and Apple Silicon (M series)
                 'install.title': '准备好了吗？',
                 'install.requirements': '需要 macOS 14.0+ 和 Apple Silicon (M 系列)',
                 'footer.license': 'MIT 许可证',
-                'footer.issues': '反馈问题'
+                'footer.issues': '反馈问题',
+                'agent.title': '让 AI 帮你装',
+                'agent.subtitle': '把下面的提示词复制粘贴给你的 AI 助手，它会自动完成安装。',
+                'agent.label': 'ai-agent-prompt',
+                'agent.copy': '复制'
             }
         };
 
@@ -366,6 +417,16 @@ Requires macOS 14.0+ and Apple Silicon (M series)
         }
 
         applyTranslations(currentLang);
+
+        function copyAgentPrompt() {
+            const prompt = document.getElementById('agentPrompt').textContent;
+            navigator.clipboard.writeText(prompt).then(() => {
+                const btn = document.getElementById('copyText');
+                const original = btn.textContent;
+                btn.textContent = currentLang === 'zh' ? '已复制 ✓' : 'Copied ✓';
+                setTimeout(() => { btn.textContent = original; }, 2000);
+            });
+        }
     </script>
 </body>
 </html>
