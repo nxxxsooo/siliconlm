@@ -1,28 +1,18 @@
-"""SiliconLM Download Manager - Queue-based HuggingFace model downloads
-
-Uses aria2c for large files (>1.5GB) to bypass 2GB download limit in huggingface_hub.
-"""
+"""SiliconLM Download Manager - Queue-based HuggingFace model downloads"""
 
 import json
 import multiprocessing
 import os
-import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 import shutil
 
-# Persistence file location
 QUEUE_FILE = Path(__file__).parent / ".download_queue.json"
-
-# HuggingFace token for authenticated downloads (set HF_TOKEN env var)
 HF_TOKEN = os.environ.get("HF_TOKEN")
-
-# Size threshold for using aria2 (1.5GB) - below 2GB limit
-ARIA2_THRESHOLD = 1.5 * 1024 * 1024 * 1024
 
 # Patterns to ignore during download
 IGNORE_PATTERNS = [
@@ -91,100 +81,21 @@ def _search_gguf_version(repo_id: str) -> Optional[str]:
         return None
 
 
-def _download_with_aria2(url: str, output_path: Path, token: str) -> bool:
-    """Download a file using aria2c - handles large files without 2GB limit"""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # aria2c command with resume support and authentication
-    # Using single connection to avoid issues with HuggingFace CDN chunked responses
-    cmd = [
-        "/opt/homebrew/bin/aria2c",
-        "--continue=true",           # Resume partial downloads
-        "--max-connection-per-server=1",  # Single connection (HF CDN compatible)
-        "--split=1",                 # No splitting
-        "--file-allocation=none",    # Don't pre-allocate (faster start)
-        "--auto-file-renaming=false",
-        "--timeout=60",              # Connection timeout
-        "--max-tries=10",            # Retry on failure
-        "--retry-wait=5",            # Wait between retries
-        f"--header=Authorization: Bearer {token}",
-        "--dir", str(output_path.parent),
-        "--out", output_path.name,
-        url
-    ]
-    
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)  # 2 hour timeout
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
-    except Exception:
-        return False
-
-
 def _download_worker(repo_id: str, local_dir: str, status_queue: multiprocessing.Queue, token: Optional[str] = None):
-    """Worker process for downloading models - uses aria2 for large files"""
     import os
     os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
     
-    from huggingface_hub import HfApi, hf_hub_url, snapshot_download
+    from huggingface_hub import snapshot_download
     
     try:
-        local_path = Path(local_dir)
-        local_path.mkdir(parents=True, exist_ok=True)
-        
-        api = HfApi()
-        
-        # Get list of files in the repo
-        files = api.list_repo_files(repo_id, token=token)
-        
-        # Separate large files from small files
-        large_files = []
-        small_file_patterns = []
-        
-        for filename in files:
-            if _should_ignore(filename):
-                continue
-                
-            # Get file info to check size
-            try:
-                file_info = api.get_paths_info(repo_id, [filename], token=token)
-                if file_info:
-                    size = file_info[0].size or 0
-                    if size >= ARIA2_THRESHOLD:
-                        large_files.append((filename, size))
-                    else:
-                        small_file_patterns.append(filename)
-            except Exception:
-                # If we can't get size, treat as small file
-                small_file_patterns.append(filename)
-        
-        # Download small files with huggingface_hub
-        if small_file_patterns:
-            # Create allow patterns for small files only
-            snapshot_download(
-                repo_id=repo_id,
-                local_dir=local_dir,
-                local_dir_use_symlinks=False,
-                token=token,
-                ignore_patterns=IGNORE_PATTERNS + [f.split("/")[-1] for f, _ in large_files],
-            )
-        
-        # Download large files with aria2
-        for filename, size in large_files:
-            output_path = local_path / filename
-            if output_path.exists() and output_path.stat().st_size == size:
-                continue  # Already downloaded
-            
-            url = hf_hub_url(repo_id, filename)
-            success = _download_with_aria2(url, output_path, token or "")
-            
-            if not success:
-                status_queue.put(("failed", f"aria2 failed for {filename}"))
-                return
-        
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=local_dir,
+            local_dir_use_symlinks=False,
+            token=token,
+            ignore_patterns=IGNORE_PATTERNS,
+        )
         status_queue.put(("completed", None))
-        
     except Exception as e:
         status_queue.put(("failed", str(e)[:200]))
 
@@ -505,36 +416,16 @@ class DownloadManager:
             return
         
         try:
-            # Calculate size: completed files + incomplete files (aria2 or huggingface cache)
             completed_size = 0
             incomplete_size = 0
             incomplete_files = []
-            aria2_files = set()  # Track .aria2 control files
-            
-            # First pass: identify aria2 control files
-            for f in task.local_path.rglob("*.aria2"):
-                aria2_files.add(f.with_suffix(""))  # The actual file being downloaded
             
             for f in task.local_path.rglob("*"):
                 if f.is_file():
-                    # Skip aria2 control files
-                    if f.suffix == ".aria2":
+                    if f.suffix in (".aria2", ):
                         continue
                     
-                    # Handle huggingface cache incomplete files
-                    if ".cache" in f.parts:
-                        if f.suffix == ".incomplete":
-                            try:
-                                fd = os.open(str(f), os.O_RDONLY)
-                                stat = os.fstat(fd)
-                                os.close(fd)
-                                size = stat.st_size
-                            except OSError:
-                                size = f.stat().st_size
-                            incomplete_files.append((f, size))
-                            incomplete_size += size
-                    # Handle aria2 downloads (file exists but has .aria2 control file)
-                    elif f in aria2_files:
+                    if ".cache" in f.parts and f.suffix == ".incomplete":
                         try:
                             fd = os.open(str(f), os.O_RDONLY)
                             stat = os.fstat(fd)

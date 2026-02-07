@@ -136,15 +136,16 @@ SERVICES = {
         "display": "LMStudio",
         "port": 1234,
         "check": "port",
-        "start_cmd": None,
-        "note": "Start from LMStudio app"
+        "process": "lms",
+        "start_cmd": [str(Path.home() / ".lmstudio" / "bin" / "lms"), "server", "start"],
+        "stop_cmd": [str(Path.home() / ".lmstudio" / "bin" / "lms"), "server", "stop"],
     },
     "opencode": {
         "display": "OpenCode",
         "process": "opencode",
         "check": "process",
-        "start_cmd": ["opencode"],
-        "start_in_terminal": True
+        "start_cmd": ["launchctl", "start", "ai.opencode.server"],
+        "start_in_terminal": False
     }
 }
 
@@ -552,6 +553,17 @@ async def stop_service(name: str):
     service = SERVICES.get(name)
     if not service:
         return {"success": False, "message": "Unknown service"}
+
+    # Use stop_cmd if defined (e.g. lms server stop)
+    if service.get("stop_cmd"):
+        try:
+            result = subprocess.run(service["stop_cmd"], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return {"success": True, "message": f"Stopped {name} via CLI"}
+            else:
+                return {"success": False, "message": result.stderr or "Stop command failed"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
 
     process_name = service.get("process", name)
     procs_to_kill = []

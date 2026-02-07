@@ -15,7 +15,7 @@ Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings,
 - **Multi-Backend Support** - MLX, mlx-lm (decoder models), sentence-transformers
 - **Service Management** - Start/stop LMStudio, MLX Embeddings, OpenCode
 - **Smart Proxy** - Routes `/v1/embeddings` to MLX, `/v1/chat` to LMStudio
-- **Model Downloads** - HuggingFace search + aria2 acceleration for large files
+- **Model Downloads** - HuggingFace search + parallel downloads for large models
 - **Settings Panel** - Configure models directory, default embedding model
 
 ## Architecture
@@ -61,9 +61,6 @@ python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
     mlx mlx-embeddings mlx-lm sentence-transformers
 
-# Optional: aria2 for large file downloads (>1.5GB)
-brew install aria2
-
 # Run dashboard (port 8765)
 .venv/bin/python server.py
 
@@ -86,9 +83,8 @@ Repository: https://github.com/nxxxsooo/siliconlm
 Steps:
 1. Clone the repo (ask me where to put it)
 2. Create a Python venv and install requirements.txt
-3. Optionally install aria2 via brew for faster model downloads
-4. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
-5. Add shell aliases to my ~/.zshrc for easy startup
+3. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+4. Add shell aliases to my ~/.zshrc for easy startup
 
 Requirements:
 - macOS 14.0+ with Apple Silicon (M series)
@@ -166,7 +162,7 @@ curl -X POST http://localhost:8766/v1/embeddings \
 | Backend | FastAPI + uvicorn |
 | Frontend | TailwindCSS + Vanilla JS |
 | Embeddings | MLX + mlx-lm + sentence-transformers |
-| Downloads | huggingface_hub + aria2 |
+| Downloads | huggingface_hub |
 | Proxy | httpx async |
 
 ## License

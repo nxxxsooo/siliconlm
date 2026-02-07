@@ -15,7 +15,7 @@ Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量
 - **多后端支持** - MLX、mlx-lm（解码器模型）、sentence-transformers
 - **服务管理** - 启动/停止 LMStudio、MLX Embeddings、OpenCode
 - **智能代理** - `/v1/embeddings` 路由到 MLX，`/v1/chat` 路由到 LMStudio
-- **模型下载** - HuggingFace 搜索 + aria2 大文件加速
+- **模型下载** - HuggingFace 搜索 + 并行下载大模型
 - **设置面板** - 配置模型目录、默认嵌入模型
 
 ## 架构
@@ -60,9 +60,6 @@ python3 -m venv .venv
 # 或手动安装
 .venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
     mlx mlx-embeddings mlx-lm sentence-transformers
-
-# 可选：aria2 用于大文件下载 (>1.5GB)
-brew install aria2
 
 # 启动面板（端口 8765）
 .venv/bin/python server.py
@@ -142,7 +139,7 @@ curl -X POST http://localhost:8766/v1/embeddings \
 | 后端 | FastAPI + uvicorn |
 | 前端 | TailwindCSS + 原生 JS |
 | 嵌入 | MLX + mlx-lm + sentence-transformers |
-| 下载 | huggingface_hub + aria2 |
+| 下载 | huggingface_hub |
 | 代理 | httpx async |
 
 ## 许可证

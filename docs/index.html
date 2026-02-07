@@ -236,7 +236,7 @@
                     </div>
                     <h3 class="text-xl font-semibold mb-3" data-i18n="features.downloads.title">Model Downloads</h3>
                     <p class="text-apple-subtext leading-relaxed" data-i18n="features.downloads.desc">
-                        Search HuggingFace and download models with aria2 acceleration. Resume interrupted downloads.
+                        Search HuggingFace and download models with parallel acceleration. Resume interrupted downloads.
                     </p>
                 </div>
 
@@ -304,9 +304,8 @@ Repository: https://github.com/nxxxsooo/siliconlm
 Steps:
 1. Clone the repo to ~/Documents/sync/GitHub/siliconlm (or ask me where)
 2. Create a Python venv and install requirements.txt
-3. Optionally install aria2 via brew for faster model downloads
-4. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
-5. Add shell aliases to my ~/.zshrc for easy startup
+3. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+4. Add shell aliases to my ~/.zshrc for easy startup
 
 Requirements:
 - macOS 14.0+ with Apple Silicon (M series)
@@ -355,7 +354,7 @@ alias slm='cd ~/Documents/sync/GitHub/siliconlm &amp;&amp; nohup .venv/bin/pytho
                 'features.proxy.title': 'Smart Proxy',
                 'features.proxy.desc': 'Single endpoint routes /v1/embeddings to MLX and /v1/chat to LMStudio automatically.',
                 'features.downloads.title': 'Model Downloads',
-                'features.downloads.desc': 'Search HuggingFace and download models with aria2 acceleration. Resume interrupted downloads.',
+                'features.downloads.desc': 'Search HuggingFace and download models with parallel acceleration. Resume interrupted downloads.',
                 'install.title': 'Ready to run?',
                 'install.requirements': 'Requires macOS 14.0+ and Apple Silicon (M series)',
                 'footer.license': 'MIT License',
@@ -381,7 +380,7 @@ alias slm='cd ~/Documents/sync/GitHub/siliconlm &amp;&amp; nohup .venv/bin/pytho
                 'features.proxy.title': '智能代理',
                 'features.proxy.desc': '单一端点自动路由 /v1/embeddings 到 MLX，/v1/chat 到 LMStudio。',
                 'features.downloads.title': '模型下载',
-                'features.downloads.desc': '搜索 HuggingFace 并使用 aria2 加速下载模型。支持断点续传。',
+                'features.downloads.desc': '搜索 HuggingFace 并行加速下载模型。支持断点续传。',
                 'install.title': '准备好了吗？',
                 'install.requirements': '需要 macOS 14.0+ 和 Apple Silicon (M 系列)',
                 'footer.license': 'MIT 许可证',
