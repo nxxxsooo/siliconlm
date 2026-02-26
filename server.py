@@ -9,7 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
-
+import asyncio
 import httpx
 import psutil
 from fastapi import FastAPI, Request, Response
@@ -389,6 +389,253 @@ def get_system_stats() -> dict:
         "machine": get_machine_info(),
     }
 
+async def _fetch_latest_github_release(repo: str) -> Optional[str]:
+    """Fetch latest release tag from GitHub."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"https://api.github.com/repos/{repo}/releases/latest")
+            if r.status_code == 200:
+                return r.json().get("tag_name", "").lstrip("v")
+    except Exception:
+        pass
+    return None
+
+
+async def _fetch_latest_pypi_version(package: str) -> Optional[str]:
+    """Fetch latest version from PyPI."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"https://pypi.org/pypi/{package}/json")
+            if r.status_code == 200:
+                return r.json().get("info", {}).get("version")
+    except Exception:
+        pass
+    return None
+
+
+async def _check_opencode() -> dict:
+    """Check OpenCode installation status."""
+    name = "opencode"
+    category = "opencode"
+    install_cmd = "brew install opencode-ai/tap/opencode"
+    update_cmd = "brew upgrade opencode-ai/tap/opencode"
+    try:
+        which_result = subprocess.run(
+            ["which", "opencode"], capture_output=True, text=True, timeout=5
+        )
+        if which_result.returncode != 0:
+            return {
+                "name": name,
+                "category": category,
+                "installed": False,
+                "version": None,
+                "latest": await _fetch_latest_github_release("opencode-ai/opencode"),
+                "status": "missing",
+                "install_cmd": install_cmd,
+                "update_cmd": update_cmd,
+            }
+        version_result = subprocess.run(
+            ["opencode", "--version"], capture_output=True, text=True, timeout=5
+        )
+        version = version_result.stdout.strip().split()[-1] if version_result.returncode == 0 else None
+        latest = await _fetch_latest_github_release("opencode-ai/opencode")
+        status = "current"
+        if version and latest:
+            if version != latest:
+                status = "outdated"
+        else:
+            status = "unknown"
+        return {
+            "name": name,
+            "category": category,
+            "installed": True,
+            "version": version,
+            "latest": latest,
+            "status": status,
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
+        }
+    except Exception:
+        return {
+            "name": name,
+            "category": category,
+            "installed": False,
+            "version": None,
+            "latest": await _fetch_latest_github_release("opencode-ai/opencode"),
+            "status": "unknown",
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
+        }
+
+
+async def _check_lmstudio_cli() -> dict:
+    """Check LMStudio CLI (lms) status."""
+    name = "lmstudio-cli"
+    category = "lmstudio"
+    install_cmd = "Download from https://lmstudio.ai"
+    update_cmd = "Update via LMStudio app"
+    lms_path = Path.home() / ".lmstudio" / "bin" / "lms"
+    if not lms_path.exists():
+        return {
+            "name": name,
+            "category": category,
+            "installed": False,
+            "version": None,
+            "latest": None,
+            "status": "missing",
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
+        }
+    try:
+        version_result = subprocess.run(
+            [str(lms_path), "--version"], capture_output=True, text=True, timeout=5
+        )
+        version = version_result.stdout.strip() if version_result.returncode == 0 else None
+        return {
+            "name": name,
+            "category": category,
+            "installed": True,
+            "version": version,
+            "latest": None,
+            "status": "current",
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
+        }
+    except Exception:
+        return {
+            "name": name,
+            "category": category,
+            "installed": True,
+            "version": None,
+            "latest": None,
+            "status": "unknown",
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
+        }
+
+
+async def _check_mlx_tools() -> list[dict]:
+    """Check MLX tools (mlx, mlx-lm, mlx-embeddings) in external venv."""
+    tools = [
+        {"name": "mlx", "package": "mlx"},
+        {"name": "mlx-lm", "package": "mlx-lm"},
+        {"name": "mlx-embeddings", "package": "mlx-embeddings"},
+    ]
+    category = "mlx_tools"
+    install_cmd = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install <package>"
+    update_cmd = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install --upgrade <package>"
+    venv_pip = Path.home() / ".local" / "share" / "siliconlm" / "venv" / "bin" / "pip"
+    results = []
+    for tool in tools:
+        try:
+            pip_result = subprocess.run(
+                [str(venv_pip), "show", tool["package"]],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if pip_result.returncode != 0:
+                latest = await _fetch_latest_pypi_version(tool["package"])
+                results.append({
+                    "name": tool["name"],
+                    "category": category,
+                    "installed": False,
+                    "version": None,
+                    "latest": latest,
+                    "status": "missing",
+                    "install_cmd": install_cmd.replace("<package>", tool["package"]),
+                    "update_cmd": update_cmd.replace("<package>", tool["package"]),
+                })
+                continue
+            version = None
+            for line in pip_result.stdout.split("\n"):
+                if line.startswith("Version:"):
+                    version = line.split(":", 1)[1].strip()
+                    break
+            latest = await _fetch_latest_pypi_version(tool["package"])
+            status = "current"
+            if version and latest:
+                if version != latest:
+                    status = "outdated"
+            else:
+                status = "unknown"
+            results.append({
+                "name": tool["name"],
+                "category": category,
+                "installed": True,
+                "version": version,
+                "latest": latest,
+                "status": status,
+                "install_cmd": install_cmd.replace("<package>", tool["package"]),
+                "update_cmd": update_cmd.replace("<package>", tool["package"]),
+            })
+        except Exception:
+            latest = await _fetch_latest_pypi_version(tool["package"])
+            results.append({
+                "name": tool["name"],
+                "category": category,
+                "installed": False,
+                "version": None,
+                "latest": latest,
+                "status": "unknown",
+                "install_cmd": install_cmd.replace("<package>", tool["package"]),
+                "update_cmd": update_cmd.replace("<package>", tool["package"]),
+            })
+    return results
+
+
+async def _check_brew_packages() -> list[dict]:
+    """Check Homebrew packages (python3)."""
+    packages = [{"name": "python3", "brew_name": "python3"}]
+    category = "homebrew"
+    install_cmd = "brew install <package>"
+    update_cmd = "brew upgrade <package>"
+    results = []
+    for pkg in packages:
+        try:
+            brew_result = subprocess.run(
+                ["brew", "list", "--versions", pkg["brew_name"]],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if brew_result.returncode != 0:
+                results.append({
+                    "name": pkg["name"],
+                    "category": category,
+                    "installed": False,
+                    "version": None,
+                    "latest": None,
+                    "status": "missing",
+                    "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
+                    "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
+                })
+                continue
+            version = brew_result.stdout.strip().split()[-1] if brew_result.stdout.strip() else None
+            results.append({
+                "name": pkg["name"],
+                "category": category,
+                "installed": True,
+                "version": version,
+                "latest": None,
+                "status": "current",
+                "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
+                "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
+            })
+        except Exception:
+            results.append({
+                "name": pkg["name"],
+                "category": category,
+                "installed": False,
+                "version": None,
+                "latest": None,
+                "status": "unknown",
+                "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
+                "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
+            })
+    return results
+
+
 
 def _refresh_models_cache_if_needed(force: bool = False):
     """Refresh models cache if TTL expired or forced"""
@@ -589,6 +836,24 @@ async def update_settings(request: Request):
         return {"success": True, "settings": _settings}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+
+@app.get("/api/cli-agents")
+async def get_cli_agents():
+    """Return status of all monitored CLI tools."""
+    agents = await asyncio.gather(
+        _check_opencode(),
+        _check_lmstudio_cli(),
+        _check_mlx_tools(),
+        _check_brew_packages(),
+    )
+    flat = []
+    for a in agents:
+        if isinstance(a, list):
+            flat.extend(a)
+        else:
+            flat.append(a)
+    return {"agents": flat}
 
 
 @app.post("/api/service/{name}/start")
