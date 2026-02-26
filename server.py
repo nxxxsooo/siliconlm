@@ -856,6 +856,118 @@ async def get_cli_agents():
     return {"agents": flat}
 
 
+async def _run_shell_command(cmd: str, timeout: int = 60) -> tuple[bool, str]:
+    """Run a shell command with timeout. Returns (success, message)."""
+    try:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip() or "Command completed successfully"
+        else:
+            return False, result.stderr.strip() or result.stdout.strip() or "Command failed"
+    except subprocess.TimeoutExpired:
+        return False, f"Command timed out after {timeout} seconds"
+    except Exception as e:
+        return False, str(e)
+
+
+@app.post("/api/cli-agents/install")
+async def install_cli_agents(request: Request):
+    """Install missing CLI tools."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    requested_tools = body.get("tools", "all")
+    agents_response = await get_cli_agents()
+    agents = agents_response["agents"]
+    if requested_tools == "all":
+        target_agents = agents
+    else:
+        target_tools = requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        target_agents = [a for a in agents if a["name"] in target_tools]
+    # Process each tool
+    results = []
+    for agent in target_agents:
+        name = agent["name"]
+        if agent["status"] != "missing":
+            results.append({
+                "name": name,
+                "success": True,
+                "message": f"{name} is already installed",
+            })
+            continue
+        # Check if installable
+        if name == "lmstudio-cli":
+            results.append({
+                "name": name,
+                "success": False,
+                "message": "Install/update via LMStudio app",
+            })
+            continue
+        # Run install command
+        install_cmd = agent["install_cmd"]
+        timeout = 60 if "brew" in install_cmd else 30
+        success, message = await _run_shell_command(install_cmd, timeout=timeout)
+        results.append({
+            "name": name,
+            "success": success,
+            "message": message,
+        })
+    return {"results": results}
+
+
+@app.post("/api/cli-agents/update")
+async def update_cli_agents(request: Request):
+    """Update outdated CLI tools."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    requested_tools = body.get("tools", "all")
+    agents_response = await get_cli_agents()
+    agents = agents_response["agents"]
+    if requested_tools == "all":
+        target_agents = agents
+    else:
+        target_tools = requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        target_agents = [a for a in agents if a["name"] in target_tools]
+    # Process each tool
+    results = []
+    for agent in target_agents:
+        name = agent["name"]
+        if agent["status"] != "outdated":
+            results.append({
+                "name": name,
+                "success": True,
+                "message": f"{name} is already up to date",
+            })
+            continue
+        # Check if updatable
+        if name == "lmstudio-cli":
+            results.append({
+                "name": name,
+                "success": False,
+                "message": "Install/update via LMStudio app",
+            })
+            continue
+        # Run update command
+        update_cmd = agent["update_cmd"]
+        timeout = 60 if "brew" in update_cmd else 30
+        success, message = await _run_shell_command(update_cmd, timeout=timeout)
+        results.append({
+            "name": name,
+            "success": success,
+            "message": message,
+        })
+    return {"results": results}
+
 @app.post("/api/service/{name}/start")
 async def start_service(name: str):
     service = SERVICES.get(name)
@@ -1079,6 +1191,7 @@ class DownloadRequest(BaseModel):
     repo_id: str
 
 
+
 @app.get("/api/downloads")
 async def get_downloads():
     """Get download queue status and presets"""
@@ -1123,6 +1236,7 @@ async def delete_download(req: DownloadRequest):
 class SearchRequest(BaseModel):
     query: str
     filter: str = "embedding"  # "embedding", "llm", "all"
+
 
 
 @app.post("/api/search/huggingface")
