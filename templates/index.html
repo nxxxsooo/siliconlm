@@ -128,6 +128,15 @@
             <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="services">Services</h2>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="services-container"></div>
         </div>
+        <!-- CLI Agents -->
+        <div class="mb-6">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider" data-i18n="cliAgents">CLI Agents</h2>
+            <div class="card rounded-xl overflow-hidden">
+                <div class="p-4" id="cli-agents-container">
+                    <div class="text-gray-500 text-sm">Loading...</div>
+                </div>
+            </div>
+        </div>
 
         <!-- Embeddings Activity (from 8766) -->
         <div id="activity-section" class="mb-6 hidden">
@@ -232,6 +241,16 @@
                 addedToQueue: '已添加到队列', alreadyDownloaded: '已下载', settingsSaved: '设置已保存',
                 hfRepoPlaceholder: 'HuggingFace 仓库 (如 mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)',
                 autoSelect: '(自动选择第一个可用)',
+                cliAgents: 'CLI Agents',
+                installAll: 'Install All',
+                updateAll: 'Update All',
+                installing: 'Installing...',
+                updating: 'Updating...',
+                latest: '最新版',
+                current: 'Current',
+                outdated: 'Outdated',
+                missing: 'Missing',
+                unknown: 'Unknown',
             },
             en: {
                 settings: 'Settings', save: 'Save', cancel: 'Cancel',
@@ -249,7 +268,17 @@
                 addedToQueue: 'Added to queue', alreadyDownloaded: 'Already downloaded', settingsSaved: 'Settings saved',
                 hfRepoPlaceholder: 'HuggingFace repo (e.g. mlx-community/Qwen2.5-Coder-32B-Instruct-4bit)',
                 autoSelect: '(Auto-select first available)',
-            }
+                cliAgents: 'CLI Agents',
+                installAll: 'Install All',
+                updateAll: 'Update All',
+                installing: 'Installing...',
+                updating: 'Updating...',
+                latest: 'LATEST',
+                current: 'Current',
+                outdated: 'Outdated',
+                missing: 'Missing',
+                unknown: 'Unknown',
+            },
         };
         let currentLang = localStorage.getItem('siliconlm-lang') || 'zh';
         
@@ -902,10 +931,135 @@
             } else {
                 showToast('Failed to save: ' + data.message, 'error');
             }
+
+        // ========== CLI Agents ==========
+        let cliAgents = [];
+        let cliAgentsActionRunning = false;
+
+        function getStatusBadgeClass(status) {
+            switch(status) {
+                case 'current': return 'bg-green-900/30 text-green-400 border border-green-800/50';
+                case 'outdated': return 'bg-yellow-900/30 text-yellow-400 border border-yellow-800/50';
+                case 'missing': return 'bg-red-900/30 text-red-400 border border-red-800/50';
+                default: return 'bg-gray-900/30 text-gray-400 border border-gray-800/50';
+            }
+        }
+
+        function renderCliAgents() {
+            const container = document.getElementById('cli-agents-container');
+            if (!cliAgents || cliAgents.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-sm">Loading...</div>';
+                return;
+            }
+
+            const hasMissing = cliAgents.some(a => a.status === 'missing');
+            const hasOutdated = cliAgents.some(a => a.status === 'outdated');
+
+            let html = '';
+
+            // Action buttons
+            if (hasMissing || hasOutdated) {
+                html += '<div class="flex gap-2 mb-4">';
+                if (hasMissing) {
+                    html += `<button onclick="installAllAgents()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white transition-all" data-i18n="installAll" ${cliAgentsActionRunning ? 'disabled' : ''}>
+                        ${cliAgentsActionRunning ? t('installing') : t('installAll')}
+                    </button>`;
+                }
+                if (hasOutdated) {
+                    html += `<button onclick="updateAllAgents()" class="bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 px-4 py-2 rounded-lg text-sm font-medium transition-all" data-i18n="updateAll" ${cliAgentsActionRunning ? 'disabled' : ''}>
+                        ${cliAgentsActionRunning ? t('updating') : t('updateAll')}
+                    </button>`;
+                }
+                html += '</div>';
+            }
+
+            // Agents table
+            html += '<div class="overflow-x-auto"><table class="w-full text-sm">';
+            html += '<thead class="bg-dark-700/50"><tr>';
+            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="name">${t('name')}</th>`;
+            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="version">${t('version')}</th>`;
+            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="latest">${t('latest')}</th>`;
+            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="status">${t('status')}</th>`;
+            html += '</tr></thead>';
+            html += '<tbody>';
+            for (const agent of cliAgents) {
+                html += '<tr class="border-t border-dark-600 hover:bg-dark-700/30">';
+                html += `<td class="p-3 font-medium text-white">${agent.name}</td>`;
+                html += `<td class="p-3 text-gray-400">${agent.version || '--'}</td>`;
+                html += `<td class="p-3 text-gray-400">${agent.latest || '--'}</td>`;
+                const statusLabel = t(agent.status || 'unknown');
+                html += `<td class="p-3"><span class="badge ${getStatusBadgeClass(agent.status)}">${statusLabel}</span></td>`;
+                html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+
+            container.innerHTML = html;
+        }
+
+        async function fetchCliAgents() {
+            try {
+                const res = await fetch('/api/cli-agents');
+                const data = await res.json();
+                cliAgents = data.agents || [];
+                renderCliAgents();
+            } catch (e) {
+                console.error('CLI Agents fetch error:', e);
+                document.getElementById('cli-agents-container').innerHTML = '<div class="text-red-400 text-sm">Failed to load CLI agents</div>';
+            }
+        }
+
+        async function installAllAgents() {
+            if (cliAgentsActionRunning) return;
+            cliAgentsActionRunning = true;
+            renderCliAgents();
+            try {
+                const res = await fetch('/api/cli-agents/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tools: 'all' })
+                });
+                const data = await res.json();
+                showToast(data.message || (data.success ? 'Installation started' : 'Installation failed'), data.success ? 'success' : 'error');
+                if (data.success) {
+                    setTimeout(fetchCliAgents, 2000);
+                }
+            } catch (e) {
+                console.error('Install error:', e);
+                showToast('Installation failed', 'error');
+            } finally {
+                cliAgentsActionRunning = false;
+                renderCliAgents();
+            }
+        }
+
+        async function updateAllAgents() {
+            if (cliAgentsActionRunning) return;
+            cliAgentsActionRunning = true;
+            renderCliAgents();
+            try {
+                const res = await fetch('/api/cli-agents/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tools: 'all' })
+                });
+                const data = await res.json();
+                showToast(data.message || (data.success ? 'Update started' : 'Update failed'), data.success ? 'success' : 'error');
+                if (data.success) {
+                    setTimeout(fetchCliAgents, 2000);
+                }
+            } catch (e) {
+                console.error('Update error:', e);
+                showToast('Update failed', 'error');
+            } finally {
+                cliAgentsActionRunning = false;
+                renderCliAgents();
+            }
         }
 
         fetchStatus();
+        fetchCliAgents();
         setInterval(fetchStatus, 2000);
+        setInterval(fetchCliAgents, 30000);
         
         // ========== Search HuggingFace Modal ==========
         function openSearchModal() {
