@@ -6,6 +6,7 @@ import os
 import socket
 import subprocess
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -17,8 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from download_manager import download_manager, PRESET_MODELS
+@asynccontextmanager
+async def lifespan(app):
+    # Startup
+    download_manager.start()
+    yield
+    # Shutdown
+    download_manager.stop()
 
-app = FastAPI(title="SiliconLM")
+
+app = FastAPI(title="SiliconLM", lifespan=lifespan)
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 DEFAULT_SETTINGS = {
@@ -107,15 +116,6 @@ from collections import deque
 _activity_log = deque(maxlen=50)
 
 
-# Start download manager on app startup
-@app.on_event("startup")
-async def startup_event():
-    download_manager.start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    download_manager.stop()
 
 
 # Static files
@@ -141,7 +141,7 @@ SERVICES = {
         "check": "port",
         "process": "embedding_server",
         "start_cmd": [
-            str(DASHBOARD_DIR / ".venv" / "bin" / "python"),
+            os.path.expanduser("~/.local/share/siliconlm/venv/bin/python"),
             str(DASHBOARD_DIR / "embedding_server.py"),
         ],
         "metrics_url": "http://localhost:8766/api/metrics",
@@ -175,6 +175,12 @@ def check_process(name: str) -> Optional[int]:
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
             cmdline = proc.info.get("cmdline") or []
+            if name == "opencode serve":
+                has_opencode = any("opencode" in arg for arg in cmdline)
+                has_serve = any(arg == "serve" for arg in cmdline)
+                if has_opencode and has_serve:
+                    return proc.info["pid"]
+
             if name in proc.info.get("name", "") or any(name in arg for arg in cmdline):
                 return proc.info["pid"]
         except (psutil.NoSuchProcess, psutil.AccessDenied):
