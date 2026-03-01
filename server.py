@@ -434,14 +434,16 @@ async def _check_opencode() -> dict:
                 "version": None, "latest": None, "status": "missing",
                 "install_cmd": install_cmd, "update_cmd": update_cmd,
             }
-        version_result = subprocess.run(
+        version_result = await asyncio.to_thread(
+            subprocess.run,
             [opencode_path, "--version"], capture_output=True, text=True, timeout=5
         )
         version = version_result.stdout.strip().split()[-1] if version_result.returncode == 0 else None
         # Use brew info to get latest version (opencode is in homebrew-core)
         latest = None
         try:
-            brew_result = subprocess.run(
+            brew_result = await asyncio.to_thread(
+                subprocess.run,
                 ["/opt/homebrew/bin/brew", "info", "--json=v2", "opencode"],
                 capture_output=True, text=True, timeout=10
             )
@@ -496,7 +498,8 @@ async def _check_lmstudio_cli() -> dict:
             "update_cmd": update_cmd,
         }
     try:
-        version_result = subprocess.run(
+        version_result = await asyncio.to_thread(
+            subprocess.run,
             [str(lms_path), "--version"], capture_output=True, text=True, timeout=5
         )
         version = version_result.stdout.strip() if version_result.returncode == 0 else None
@@ -531,31 +534,26 @@ async def _check_mlx_tools() -> list[dict]:
         {"name": "mlx-embeddings", "package": "mlx-embeddings"},
     ]
     category = "mlx_tools"
-    install_cmd = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install <package>"
-    update_cmd = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install --upgrade <package>"
-    venv_pip = Path.home() / ".local" / "share" / "siliconlm" / "venv" / "bin" / "pip"
-    results = []
-    for tool in tools:
+    install_tpl = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install <package>"
+    update_tpl = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install --upgrade <package>"
+    venv_pip = str(Path.home() / ".local" / "share" / "siliconlm" / "venv" / "bin" / "pip")
+
+    async def _check_one(tool: dict) -> dict:
+        install_cmd = install_tpl.replace("<package>", tool["package"])
+        update_cmd = update_tpl.replace("<package>", tool["package"])
         try:
-            pip_result = subprocess.run(
-                [str(venv_pip), "show", tool["package"]],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            pip_result = await asyncio.to_thread(
+                subprocess.run,
+                [venv_pip, "show", tool["package"]],
+                capture_output=True, text=True, timeout=10,
             )
             if pip_result.returncode != 0:
                 latest = await _fetch_latest_pypi_version(tool["package"])
-                results.append({
-                    "name": tool["name"],
-                    "category": category,
-                    "installed": False,
-                    "version": None,
-                    "latest": latest,
-                    "status": "missing",
-                    "install_cmd": install_cmd.replace("<package>", tool["package"]),
-                    "update_cmd": update_cmd.replace("<package>", tool["package"]),
-                })
-                continue
+                return {
+                    "name": tool["name"], "category": category,
+                    "installed": False, "version": None, "latest": latest,
+                    "status": "missing", "install_cmd": install_cmd, "update_cmd": update_cmd,
+                }
             version = None
             for line in pip_result.stdout.split("\n"):
                 if line.startswith("Version:"):
@@ -573,29 +571,20 @@ async def _check_mlx_tools() -> list[dict]:
                         status = "outdated"
             else:
                 status = "unknown"
-            results.append({
-                "name": tool["name"],
-                "category": category,
-                "installed": True,
-                "version": version,
-                "latest": latest,
-                "status": status,
-                "install_cmd": install_cmd.replace("<package>", tool["package"]),
-                "update_cmd": update_cmd.replace("<package>", tool["package"]),
-            })
+            return {
+                "name": tool["name"], "category": category,
+                "installed": True, "version": version, "latest": latest,
+                "status": status, "install_cmd": install_cmd, "update_cmd": update_cmd,
+            }
         except Exception:
             latest = await _fetch_latest_pypi_version(tool["package"])
-            results.append({
-                "name": tool["name"],
-                "category": category,
-                "installed": False,
-                "version": None,
-                "latest": latest,
-                "status": "unknown",
-                "install_cmd": install_cmd.replace("<package>", tool["package"]),
-                "update_cmd": update_cmd.replace("<package>", tool["package"]),
-            })
-    return results
+            return {
+                "name": tool["name"], "category": category,
+                "installed": False, "version": None, "latest": latest,
+                "status": "unknown", "install_cmd": install_cmd, "update_cmd": update_cmd,
+            }
+
+    return list(await asyncio.gather(*[_check_one(t) for t in tools]))
 
 
 async def _check_brew_packages() -> list[dict]:
@@ -607,11 +596,10 @@ async def _check_brew_packages() -> list[dict]:
     results = []
     for pkg in packages:
         try:
-            brew_result = subprocess.run(
+            brew_result = await asyncio.to_thread(
+                subprocess.run,
                 ["brew", "list", "--versions", pkg["brew_name"]],
-                capture_output=True,
-                text=True,
-                timeout=10,
+                capture_output=True, text=True, timeout=10,
             )
             if brew_result.returncode != 0:
                 results.append({
