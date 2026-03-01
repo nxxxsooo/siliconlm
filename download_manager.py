@@ -189,14 +189,16 @@ SYSTEM_RAM_GB = _get_system_ram_gb()
 # Model presets organized by category - filtered by system RAM
 _ALL_PRESETS = {
     "coding": [
-        {"repo": "mlx-community/Qwen2.5-Coder-32B-Instruct-4bit", "name": "Qwen2.5 Coder 32B", "size": "18GB", "ram": 24},
-        {"repo": "mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx", "name": "DeepSeek V2 Lite", "size": "9GB", "ram": 16},
+        {"repo": "lmstudio-community/Qwen3-Coder-Next-MLX-4bit", "name": "Qwen3 Coder Next 80B", "size": "42GB", "ram": 48},
+        {"repo": "mlx-community/Codestral-22B-v0.1-4bit", "name": "Codestral 22B", "size": "13GB", "ram": 20},
     ],
     "general": [
-        {"repo": "mlx-community/Llama-3.3-70B-Instruct-4bit", "name": "Llama 3.3 70B", "size": "40GB", "ram": 48},
-        {"repo": "mlx-community/Qwen2.5-72B-Instruct-4bit", "name": "Qwen2.5 72B", "size": "42GB", "ram": 48},
-        {"repo": "mlx-community/Mistral-Small-24B-Instruct-2501-4bit", "name": "Mistral Small 24B", "size": "14GB", "ram": 20},
-        {"repo": "mlx-community/gemma-2-27b-it-4bit", "name": "Gemma 2 27B", "size": "15GB", "ram": 20},
+        {"repo": "mlx-community/Qwen3.5-35B-A3B-4bit", "name": "Qwen3.5 35B A3B 4bit", "size": "~7GB", "ram": 12},
+        {"repo": "mlx-community/Qwen3.5-35B-A3B-8bit", "name": "Qwen3.5 35B A3B 8bit", "size": "~10GB", "ram": 16},
+        {"repo": "mlx-community/Qwen3.5-122B-A10B-4bit", "name": "Qwen3.5 122B A10B", "size": "~20GB", "ram": 24},
+    ],
+    "reasoning": [
+        {"repo": "mlx-community/DeepSeek-R1-Distill-Llama-70B-4bit", "name": "DeepSeek R1 70B", "size": "40GB", "ram": 48},
     ],
     "embedding": [
         {"repo": "mlx-community/Qwen3-Embedding-8B-4bit-DWQ", "name": "Qwen3 Embed 8B", "size": "4.5GB", "ram": 8},

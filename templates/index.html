@@ -44,6 +44,7 @@
         .badge-coding { background: #388bfd30; color: #58a6ff; }
         .badge-general { background: #a371f730; color: #a371f7; }
         .badge-embedding { background: #3fb95030; color: #3fb950; }
+        .badge-reasoning { background: #d2992230; color: #d29922; }
     </style>
 </head>
 <body class="text-gray-200 min-h-screen p-4 md:p-6">
@@ -495,6 +496,7 @@
             const categoryLabels = {
                 coding: { label: 'Coding', class: 'badge-coding' },
                 general: { label: 'General', class: 'badge-general' },
+                reasoning: { label: 'Reasoning', class: 'badge-reasoning' },
                 embedding: { label: 'Embedding', class: 'badge-embedding' }
             };
             
@@ -931,6 +933,7 @@
             } else {
                 showToast('Failed to save: ' + data.message, 'error');
             }
+        }
 
         // ========== CLI Agents ==========
         let cliAgents = [];

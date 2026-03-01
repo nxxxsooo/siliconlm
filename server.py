@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import subprocess
+import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -404,7 +405,7 @@ async def _fetch_latest_github_release(repo: str) -> Optional[str]:
 async def _fetch_latest_pypi_version(package: str) -> Optional[str]:
     """Fetch latest version from PyPI."""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"https://pypi.org/pypi/{package}/json")
             if r.status_code == 200:
                 return r.json().get("info", {}).get("version")
@@ -417,54 +418,62 @@ async def _check_opencode() -> dict:
     """Check OpenCode installation status."""
     name = "opencode"
     category = "opencode"
-    install_cmd = "brew install opencode-ai/tap/opencode"
-    update_cmd = "brew upgrade opencode-ai/tap/opencode"
+    install_cmd = "brew install opencode"
+    update_cmd = "brew upgrade opencode"
     try:
-        which_result = subprocess.run(
-            ["which", "opencode"], capture_output=True, text=True, timeout=5
-        )
-        if which_result.returncode != 0:
+        # Check common install locations since launchd PATH is minimal
+        opencode_path = shutil.which("opencode")
+        if not opencode_path:
+            for p in [Path.home() / ".local" / "bin" / "opencode", Path("/opt/homebrew/bin/opencode")]:
+                if p.exists():
+                    opencode_path = str(p)
+                    break
+        if not opencode_path:
             return {
-                "name": name,
-                "category": category,
-                "installed": False,
-                "version": None,
-                "latest": await _fetch_latest_github_release("opencode-ai/opencode"),
-                "status": "missing",
-                "install_cmd": install_cmd,
-                "update_cmd": update_cmd,
+                "name": name, "category": category, "installed": False,
+                "version": None, "latest": None, "status": "missing",
+                "install_cmd": install_cmd, "update_cmd": update_cmd,
             }
         version_result = subprocess.run(
-            ["opencode", "--version"], capture_output=True, text=True, timeout=5
+            [opencode_path, "--version"], capture_output=True, text=True, timeout=5
         )
         version = version_result.stdout.strip().split()[-1] if version_result.returncode == 0 else None
-        latest = await _fetch_latest_github_release("opencode-ai/opencode")
+        # Use brew info to get latest version (opencode is in homebrew-core)
+        latest = None
+        try:
+            brew_result = subprocess.run(
+                ["/opt/homebrew/bin/brew", "info", "--json=v2", "opencode"],
+                capture_output=True, text=True, timeout=10
+            )
+            if brew_result.returncode == 0:
+                brew_data = json.loads(brew_result.stdout)
+                formulae = brew_data.get("formulae", [])
+                if formulae:
+                    latest = formulae[0].get("versions", {}).get("stable")
+        except Exception:
+            pass
         status = "current"
         if version and latest:
-            if version != latest:
-                status = "outdated"
-        else:
-            status = "unknown"
+            try:
+                from packaging.version import Version
+                if Version(version) < Version(latest):
+                    status = "outdated"
+            except Exception:
+                # Fallback to string comparison
+                if version != latest:
+                    status = "outdated"
+        elif not latest:
+            status = "current"  # Can't determine latest, assume current
         return {
-            "name": name,
-            "category": category,
-            "installed": True,
-            "version": version,
-            "latest": latest,
-            "status": status,
-            "install_cmd": install_cmd,
-            "update_cmd": update_cmd,
+            "name": name, "category": category, "installed": True,
+            "version": version, "latest": latest, "status": status,
+            "install_cmd": install_cmd, "update_cmd": update_cmd,
         }
     except Exception:
         return {
-            "name": name,
-            "category": category,
-            "installed": False,
-            "version": None,
-            "latest": await _fetch_latest_github_release("opencode-ai/opencode"),
-            "status": "unknown",
-            "install_cmd": install_cmd,
-            "update_cmd": update_cmd,
+            "name": name, "category": category, "installed": False,
+            "version": None, "latest": None, "status": "unknown",
+            "install_cmd": install_cmd, "update_cmd": update_cmd,
         }
 
 
@@ -555,8 +564,13 @@ async def _check_mlx_tools() -> list[dict]:
             latest = await _fetch_latest_pypi_version(tool["package"])
             status = "current"
             if version and latest:
-                if version != latest:
-                    status = "outdated"
+                try:
+                    from packaging.version import Version
+                    if Version(version) < Version(latest):
+                        status = "outdated"
+                except Exception:
+                    if version != latest:
+                        status = "outdated"
             else:
                 status = "unknown"
             results.append({
@@ -942,7 +956,7 @@ async def update_cli_agents(request: Request):
     results = []
     for agent in target_agents:
         name = agent["name"]
-        if agent["status"] != "outdated":
+        if agent["status"] not in ("outdated", "unknown"):
             results.append({
                 "name": name,
                 "success": True,
@@ -959,7 +973,7 @@ async def update_cli_agents(request: Request):
             continue
         # Run update command
         update_cmd = agent["update_cmd"]
-        timeout = 60 if "brew" in update_cmd else 30
+        timeout = 120 if "pip" in update_cmd else (60 if "brew" in update_cmd else 30)
         success, message = await _run_shell_command(update_cmd, timeout=timeout)
         results.append({
             "name": name,
