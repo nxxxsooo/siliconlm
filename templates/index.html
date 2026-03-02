@@ -364,7 +364,7 @@
                         const shortId = md.id.split('/').pop() || md.id;
                         return `<div class="flex items-center gap-1 text-xs text-gray-300 truncate">${shortId}${badge}</div>`;
                     }).join('')
-                    : '<div class="text-xs text-gray-500">No models loaded</div>';
+                    : '<div class="text-xs text-gray-500">No models available</div>';
                 return `
                     <div class="space-y-2">
                         <div class="grid grid-cols-2 gap-2 text-center">
@@ -378,7 +378,7 @@
                             </div>
                         </div>
                         <div class="bg-dark-700 rounded-lg p-2 space-y-1">
-                            <div class="text-[10px] text-gray-500 uppercase tracking-wider">Loaded Models (${m.models_loaded || 0})</div>
+                            <div class="text-[10px] text-gray-500 uppercase tracking-wider">Available Models (${m.models_loaded || 0})</div>
                             ${modelList}
                         </div>
                     </div>
