@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SiliconLM</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -91,7 +96,7 @@
         </nav>
 
         <!-- Main Content -->
-        <div class="flex-1 p-4 md:p-6 overflow-y-auto main-content" style="max-height:100vh;">
+        <div class="flex-1 p-4 md:p-6 overflow-y-auto main-content max-w-7xl mx-auto w-full px-4 md:px-8 lg:px-12 xl:px-16" style="max-height:100vh;">
             <!-- Header (inside main content) -->
             <div class="flex items-center justify-between mb-6">
                 <h1 class="text-xl font-bold text-white md:hidden">SiliconLM</h1>
@@ -138,35 +143,20 @@
             </div>
 
             <!-- ====== SECTION: Overview ====== -->
-            <div class="section-panel active" data-section="overview">
+            <div class="section-panel active" data-section="overview" id="overview-panel">
                 <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">System</h2>
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-                    <div class="card rounded-xl p-3">
-                        <div class="text-xs text-gray-500 mb-1" data-i18n="chip">Chip</div>
-                        <div class="text-sm font-semibold text-white truncate" id="machine-chip">--</div>
-                        <div class="text-xs text-gray-500" id="machine-cores">--</div>
-                    </div>
-                    <div class="card rounded-xl p-3">
-                        <div class="text-xs text-gray-500 mb-1" data-i18n="gpu">GPU</div>
-                        <div class="text-sm font-semibold text-white" id="machine-gpu">--</div>
-                        <div class="text-xs text-gray-500" id="machine-neural">--</div>
-                    </div>
-                    <div class="card rounded-xl p-3">
-                        <div class="text-xs text-gray-500 mb-1" data-i18n="ram">RAM</div>
-                        <div class="text-sm font-semibold text-white"><span id="machine-ram">--</span></div>
-                        <div class="text-xs text-gray-500"><span id="mem-percent">--%</span> <span data-i18n="used">used</span></div>
-                    </div>
-                    <div class="card rounded-xl p-3">
-                        <div class="text-xs text-gray-500 mb-1" data-i18n="disk">Disk</div>
-                        <div class="text-sm font-semibold text-white" id="disk-free">--</div>
-                        <div class="text-xs text-gray-500"><span id="disk-percent">--%</span> <span data-i18n="used">used</span></div>
-                    </div>
-                    <div class="card rounded-xl p-3">
-                        <div class="text-xs text-gray-500 mb-1" data-i18n="models">Models</div>
-                        <div class="text-sm font-semibold text-white" id="models-size">--</div>
-                        <div class="text-xs text-gray-500">macOS <span id="machine-os">--</span></div>
-                    </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6" id="overview-system-cards"></div>
+
+                <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Services</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6" id="overview-services"></div>
+
+                <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Available Models</h2>
+                <div class="card rounded-xl p-4 mb-6" id="overview-models">
+                    <div id="overview-models-content" class="flex flex-wrap gap-1.5"></div>
                 </div>
+
+                <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">Storage</h2>
+                <div class="card rounded-xl p-4" id="overview-storage"></div>
             </div>
 
             <!-- ====== SECTION: Services ====== -->
@@ -466,19 +456,111 @@
             return '';
         }
 
-        function renderMachineInfo(machine) {
-            if (!machine) return;
-            document.getElementById('machine-chip').textContent = machine.chip || '--';
-            document.getElementById('machine-ram').textContent = machine.ram_gb ? `${machine.ram_gb}GB` : '--';
-            document.getElementById('machine-os').textContent = machine.macos || '--';
-            
-            const coreInfo = machine.perf_cores && machine.eff_cores 
-                ? `${machine.perf_cores}P + ${machine.eff_cores}E cores`
-                : machine.cpu_cores ? `${machine.cpu_cores} cores` : '--';
-            document.getElementById('machine-cores').textContent = coreInfo;
-            
-            document.getElementById('machine-gpu').textContent = machine.gpu_cores ? `${machine.gpu_cores} GPU` : '--';
-            document.getElementById('machine-neural').textContent = machine.neural_engine || '--';
+        function renderOverview(status) {
+            const sys = status.system;
+            const machine = sys.machine || {};
+            const mem = sys.memory || {};
+            const disk = sys.disk || {};
+
+            // --- System Cards (6 cards, 2-col mobile, 3-col desktop) ---
+            const cards = [
+                { label: t('chip'), value: machine.chip || '--', sub: `macOS ${machine.macos || '--'}` },
+                { label: 'CPU', value: machine.perf_cores && machine.eff_cores ? `${machine.perf_cores}P + ${machine.eff_cores}E` : `${machine.cpu_cores || '--'}`, sub: `${machine.cpu_cores || '--'} ${t('cores')}` },
+                { label: t('gpu'), value: `${machine.gpu_cores || '--'} cores`, sub: `${t('neuralEngine')}: ${machine.neural_engine || '--'}` },
+                { label: t('ram'), value: machine.ram_gb ? `${machine.ram_gb} GB` : '--', sub: `${mem.percent || 0}% ${t('used')}` },
+                { label: t('disk'), value: formatBytes(disk.total || 0), sub: `${formatBytes(disk.free || 0)} free` },
+                { label: t('models'), value: `${(status.models || []).length}`, sub: formatBytes(sys.models_size || 0) },
+            ];
+            document.getElementById('overview-system-cards').innerHTML = cards.map(c => `
+                <div class="card rounded-xl p-3">
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">${c.label}</div>
+                    <div class="text-sm font-semibold text-white">${c.value}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">${c.sub}</div>
+                </div>
+            `).join('');
+
+            // --- Services Summary (clickable → Services tab) ---
+            document.getElementById('overview-services').innerHTML = (status.services || []).map(s => {
+                let dotClass = 'status-stopped';
+                if (!s.enabled) dotClass = 'status-disabled';
+                else if (s.running) dotClass = 'status-running';
+                else if (s.name === 'lmstudio' && s.daemon_running) dotClass = 'status-warning';
+
+                const metricHtml = s.running && s.metrics ? (() => {
+                    const m = s.metrics;
+                    if (s.name === 'lmstudio') return `<span class="text-xs text-gray-500">${m.models_loaded || 0} models loaded</span>`;
+                    if (s.name === 'mlx_embeddings') return `<span class="text-xs text-gray-500">${m.total_requests || 0} reqs \u00b7 ${m.avg_latency_ms || 0}ms</span>`;
+                    if (s.name === 'opencode') return `<span class="text-xs text-gray-500">${m.memory_mb || 0}MB \u00b7 ${formatUptime(m.uptime_seconds)}</span>`;
+                    return '';
+                })() : '';
+
+                return `
+                <div class="card rounded-xl p-3 flex items-center gap-3 cursor-pointer hover:border-dark-500 transition-all" onclick="switchSection('services')">
+                    <div class="status-dot ${dotClass}"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-white">${s.display}</div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-gray-500">${s.port ? ':' + s.port : ''}</span>
+                            ${metricHtml}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // --- Available Models (from LMStudio) ---
+            const lms = (status.services || []).find(s => s.name === 'lmstudio');
+            const loadedModels = lms?.running && lms?.metrics?.loaded_models ? lms.metrics.loaded_models : [];
+            const overviewModelsContent = document.getElementById('overview-models-content');
+            const overviewModelsCard = document.getElementById('overview-models');
+            if (loadedModels.length > 0) {
+                overviewModelsCard.classList.remove('hidden');
+                overviewModelsContent.innerHTML = loadedModels.map(md => {
+                    const badge = md.type === 'embedding'
+                        ? '<span class="badge badge-embedding text-[10px] ml-0.5">emb</span>'
+                        : '<span class="badge badge-coding text-[10px] ml-0.5">llm</span>';
+                    const shortId = md.id.split('/').pop() || md.id;
+                    return `<span class="inline-flex items-center bg-dark-700 rounded px-2 py-1 text-xs text-gray-300">${shortId}${badge}</span>`;
+                }).join('');
+            } else {
+                overviewModelsCard.classList.add('hidden');
+            }
+
+            // --- Storage Breakdown ---
+            const storageEl = document.getElementById('overview-storage');
+            const diskPercent = disk.percent || 0;
+            const modelsPercent = disk.total ? ((sys.models_size || 0) / disk.total * 100).toFixed(1) : 0;
+            const otherUsed = (disk.used || 0) - (sys.models_size || 0);
+            const otherPercent = disk.total ? (otherUsed / disk.total * 100).toFixed(1) : 0;
+            const topModels = [...(status.models || [])].sort((a, b) => b.size - a.size).slice(0, 3);
+
+            storageEl.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-gray-500">${formatBytes(disk.used || 0)} / ${formatBytes(disk.total || 0)}</span>
+                    <span class="text-xs text-gray-400 font-medium">${diskPercent}%</span>
+                </div>
+                <div class="flex h-2 rounded-full overflow-hidden bg-dark-700 mb-3">
+                    <div class="bg-purple-500" style="width:${modelsPercent}%" title="Models: ${formatBytes(sys.models_size || 0)}"></div>
+                    <div class="bg-accent/60" style="width:${otherPercent}%" title="Other: ${formatBytes(otherUsed)}"></div>
+                </div>
+                <div class="flex gap-4 text-xs text-gray-500 mb-3">
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-500 inline-block"></span> Models ${formatBytes(sys.models_size || 0)}</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-accent/60 inline-block"></span> Other ${formatBytes(otherUsed)}</span>
+                    <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-dark-700 inline-block"></span> Free ${formatBytes(disk.free || 0)}</span>
+                </div>
+                ${topModels.length > 0 ? `
+                    <div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">Largest Models</div>
+                    <div class="space-y-1">
+                        ${topModels.map(m => {
+                            const pct = sys.models_size ? (m.size / sys.models_size * 100).toFixed(0) : 0;
+                            return `<div class="flex items-center gap-2">
+                                <div class="flex-1 text-xs text-gray-400 truncate">${m.name.split('/').pop()}</div>
+                                <span class="text-xs text-gray-500 whitespace-nowrap">${formatBytes(m.size)}</span>
+                                <div class="w-16 h-1 rounded-full bg-dark-700 overflow-hidden"><div class="h-full bg-purple-500/60 rounded-full" style="width:${pct}%"></div></div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            `;
         }
 
         function renderServices(services) {
@@ -835,13 +917,7 @@
                     renderActivity(embedMetrics.recent_requests || [], embedMetrics.embedding_dim || 0);
                 }
 
-                renderMachineInfo(status.system?.machine);
-                
-                document.getElementById('mem-percent').textContent = status.system.memory.percent + '%';
-                document.getElementById('disk-percent').textContent = status.system.disk.percent + '%';
-                document.getElementById('disk-free').textContent = formatBytes(status.system.disk.free);
-                document.getElementById('models-size').textContent = formatBytes(status.system.models_size);
-
+                renderOverview(status);
                 renderServices(status.services);
                 renderPresets(downloads.presets, status.models);
                 renderActiveDownloads(downloads.active || []);
@@ -1263,6 +1339,11 @@
         // Initialize i18n
         document.getElementById('lang-toggle').textContent = currentLang === 'zh' ? 'EN' : '中文';
         applyTranslations();
+
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+        }
     </script>
 </body>
 </html>
