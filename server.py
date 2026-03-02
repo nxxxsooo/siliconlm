@@ -150,8 +150,8 @@ SERVICES = {
     "lmstudio": {
         "display": "LMStudio (llmster)",
         "port": 1234,
-        "check": "cli",
-        "cli": str(Path.home() / ".lmstudio" / "bin" / "lms"),
+        "check": "lmstudio",
+        "process": "llmster",
     },
     "opencode": {
         "display": "OpenCode",
@@ -189,17 +189,18 @@ def check_process(name: str) -> Optional[int]:
     return None
 
 
-def _lms_cli(args: list[str], timeout: int = 5) -> Optional[dict]:
-    cli = SERVICES["lmstudio"].get("cli", "lms")
+def _lmstudio_status() -> dict:
+    """Check LMStudio status via process detection + HTTP API (no lms CLI)."""
+    pid = check_process("llmster")
+    if not pid:
+        return {"daemon_running": False, "running": False, "pid": None, "port": None}
+    # Daemon is running, check if HTTP server responds
     try:
-        result = subprocess.run(
-            [cli] + args + ["--json"], capture_output=True, text=True, timeout=timeout
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return json.loads(result.stdout)
+        import urllib.request
+        with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=2) as resp:
+            return {"daemon_running": True, "running": True, "pid": pid, "port": 1234}
     except Exception:
-        pass
-    return None
+        return {"daemon_running": True, "running": False, "pid": pid, "port": None}
 
 
 def get_service_status(name: str) -> dict:
@@ -216,19 +217,12 @@ def get_service_status(name: str) -> dict:
         "note": service.get("note") if enabled else "Disabled in settings",
     }
 
-    if service.get("check") == "cli" and name == "lmstudio":
-        daemon_info = _lms_cli(["daemon", "status"])
-        if daemon_info and daemon_info.get("status") == "running":
-            status["pid"] = daemon_info.get("pid")
-            server_info = _lms_cli(["server", "status"]) or {}
-            status["running"] = bool(server_info.get("running"))
-            status["port"] = (
-                server_info.get("port", 1234) if status["running"] else None
-            )
-            status["daemon_running"] = True
-        else:
-            status["daemon_running"] = False
-
+    if service.get("check") == "lmstudio":
+        lms = _lmstudio_status()
+        status["pid"] = lms["pid"]
+        status["running"] = lms["running"]
+        status["port"] = lms["port"]
+        status["daemon_running"] = lms["daemon_running"]
     elif service.get("check") == "port":
         port = service.get("port")
         status["running"] = check_port(port)
@@ -251,12 +245,19 @@ def get_service_status(name: str) -> dict:
                 pass
 
         if name == "lmstudio":
-            loaded = _lms_cli(["ps"])
-            models = loaded if isinstance(loaded, list) else []
+            # Get loaded models via HTTP API instead of broken lms CLI
+            models = []
+            try:
+                import urllib.request
+                with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=2) as resp:
+                    data = json.loads(resp.read().decode())
+                    models = data.get("data", [])
+            except Exception:
+                pass
             status["metrics"] = {
                 "models_loaded": len(models),
                 "loaded_models": [
-                    {"id": m.get("modelKey", ""), "type": m.get("type", "llm")}
+                    {"id": m.get("id", ""), "type": "llm"}
                     for m in models[:8]
                 ],
                 "total_requests": _lmstudio_stats["requests"],
@@ -1011,42 +1012,86 @@ async def start_service(name: str):
 
 
 def _lms_start() -> dict:
-    cli = SERVICES["lmstudio"].get("cli", "lms")
+    """Start llmster daemon directly (bypasses broken lms CLI passkey auth)."""
+    # Check if already running
+    if check_process("llmster"):
+        if check_port(1234):
+            return {"success": True, "message": "llmster already running"}
+        return {"success": True, "message": "llmster daemon running (server starting)"}
+
+    # Find llmster binary
+    llmster_dir = Path.home() / ".lmstudio" / "llmster"
+    if not llmster_dir.exists():
+        return {"success": False, "message": "llmster not installed (no ~/.lmstudio/llmster/)"}
+    # Get latest version directory
+    versions = sorted(llmster_dir.iterdir(), reverse=True)
+    if not versions:
+        return {"success": False, "message": "No llmster versions found"}
+    llmster_bin = versions[0] / "llmster"
+    if not llmster_bin.exists():
+        return {"success": False, "message": f"llmster binary not found at {llmster_bin}"}
+
     try:
-        subprocess.run(
-            [cli, "daemon", "up"], capture_output=True, text=True, timeout=15
-        )
-        result = subprocess.run(
-            [cli, "server", "start"], capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return {"success": True, "message": "llmster daemon + server started"}
-        return {
-            "success": False,
-            "message": result.stderr.strip() or "server start failed",
-        }
+        log_file = Path.home() / "Library" / "Logs" / "siliconlm" / "llmster.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "a") as f:
+            subprocess.Popen(
+                [str(llmster_bin)],
+                stdout=f, stderr=f, start_new_session=True,
+                cwd=str(versions[0]),
+            )
+        # Wait for server to come up
+        for _ in range(20):
+            if check_port(1234):
+                pid = check_process("llmster")
+                return {"success": True, "message": f"llmster started (PID: {pid})"}
+            time.sleep(0.5)
+        pid = check_process("llmster")
+        if pid:
+            return {"success": True, "message": f"llmster daemon started (PID: {pid}), server may still be loading"}
+        return {"success": False, "message": "llmster failed to start"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
 def _lms_stop() -> dict:
-    cli = SERVICES["lmstudio"].get("cli", "lms")
-    try:
-        subprocess.run(
-            [cli, "server", "stop"], capture_output=True, text=True, timeout=10
-        )
-        result = subprocess.run(
-            [cli, "daemon", "down"], capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return {"success": True, "message": "llmster server + daemon stopped"}
-        return {
-            "success": False,
-            "message": result.stderr.strip() or "daemon stop failed",
-        }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+    """Stop llmster daemon via psutil (bypasses broken lms CLI passkey auth)."""
+    procs = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            if proc.info["name"] == "llmster":
+                procs.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    if not procs:
+        return {"success": True, "message": "llmster not running"}
 
+    pids = []
+    for proc in procs:
+        try:
+            proc.terminate()
+            pids.append(proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Wait for graceful shutdown
+    gone, alive = psutil.wait_procs(procs, timeout=5)
+    for proc in alive:
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Also kill orphaned workers
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            if any("liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg for arg in cmdline):
+                proc.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    return {"success": True, "message": f"llmster stopped (PIDs: {pids})"}
 
 def _opencode_stop() -> dict:
     uid = os.getuid()
