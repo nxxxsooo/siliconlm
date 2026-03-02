@@ -252,8 +252,11 @@ class DownloadManager:
         """Stop the download manager"""
         self._running = False
         for task in self.active_tasks:
-            if task._process:
-                task._process.terminate()
+            if task._process and task._process.is_alive():
+                try:
+                    task._process.terminate()
+                except Exception:
+                    pass
     
     def add_download(self, repo_id: str) -> DownloadTask:
         """Add a model to the download queue"""
@@ -499,9 +502,11 @@ class DownloadManager:
             # Check if process is done
             if task._process and not task._process.is_alive():
                 # Check status from the queue
+                got_status = False
                 try:
                     if task._status_queue and not task._status_queue.empty():
                         status, error = task._status_queue.get_nowait()
+                        got_status = True
                         if status == "completed":
                             task.status = DownloadStatus.COMPLETED
                             task.progress = 100
@@ -509,14 +514,16 @@ class DownloadManager:
                             task.status = DownloadStatus.FAILED
                             task.error = error
                 except Exception:
-                    # Process died without reporting - check if files exist
+                    pass
+                # Process died without reporting status
+                if not got_status:
                     incomplete = list(task.local_path.rglob("*.incomplete"))
-                    if not incomplete and task.local_path.exists():
+                    if not incomplete and task.local_path.exists() and any(task.local_path.rglob("*.safetensors")):
                         task.status = DownloadStatus.COMPLETED
                         task.progress = 100
                     else:
                         task.status = DownloadStatus.FAILED
-                        task.error = "Download process terminated unexpectedly"
+                        task.error = "Download process exited without completing"
                     
         except Exception:
             pass
