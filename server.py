@@ -53,9 +53,21 @@ def save_settings(settings):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=2)
 
+_STOPPED_SERVICES_FILE = Path.home() / ".local" / "share" / "siliconlm" / "stopped_services.json"
+
+def _load_stopped_services() -> set:
+    try:
+        if _STOPPED_SERVICES_FILE.exists():
+            return set(json.loads(_STOPPED_SERVICES_FILE.read_text()))
+    except Exception:
+        pass
+    return set()
+
+def _save_stopped_services(stopped: set):
+    _STOPPED_SERVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _STOPPED_SERVICES_FILE.write_text(json.dumps(list(stopped)))
 
 _settings = load_settings()
-
 PROXY_TARGETS = {
     "embeddings": "http://localhost:8766",
     "lmstudio": "http://localhost:1234",
@@ -977,6 +989,11 @@ async def start_service(name: str):
     if not service:
         return {"success": False, "message": "Unknown service"}
 
+    # Remove from stopped services when starting
+    stopped = _load_stopped_services()
+    stopped.discard(name)
+    _save_stopped_services(stopped)
+
     if name == "lmstudio":
         return _lms_start()
 
@@ -1055,43 +1072,36 @@ def _lms_start() -> dict:
 
 
 def _lms_stop() -> dict:
-    """Stop llmster daemon via psutil (bypasses broken lms CLI passkey auth)."""
-    procs = []
-    for proc in psutil.process_iter(["pid", "name"]):
-        try:
-            if proc.info["name"] == "llmster":
-                procs.append(proc)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    if not procs:
-        return {"success": True, "message": "llmster not running"}
-
-    pids = []
-    for proc in procs:
-        try:
-            proc.terminate()
-            pids.append(proc.pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-
-    # Wait for graceful shutdown
-    gone, alive = psutil.wait_procs(procs, timeout=5)
-    for proc in alive:
-        try:
-            proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-
-    # Also kill orphaned workers
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        try:
-            cmdline = proc.info.get("cmdline") or []
-            if any("liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg for arg in cmdline):
-                proc.terminate()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-
-    return {"success": True, "message": f"llmster stopped (PIDs: {pids})"}
+    """Stop llmster daemon via psutil, repeatedly kill to prevent auto-respawn."""
+    # For about 5 seconds, repeatedly kill llmster and workers
+    start_time = time.time()
+    killed_pids = []
+    while time.time() - start_time < 5:
+        # Kill llmster processes
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                if proc.info["name"] == "llmster":
+                    try:
+                        proc.kill()
+                        if proc.pid not in killed_pids:
+                            killed_pids.append(proc.pid)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        # Kill workers too
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmdline = proc.info.get("cmdline") or []
+                if any("liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg for arg in cmdline):
+                    try:
+                        proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        time.sleep(0.2)
+    return {"success": True, "message": f"llmster stopped (PIDs: {killed_pids})"}
 
 def _opencode_stop() -> dict:
     uid = os.getuid()
@@ -1136,16 +1146,26 @@ async def stop_service(name: str):
     if not service:
         return {"success": False, "message": "Unknown service"}
 
+    # Persist stopped state BEFORE blocking kill (so restart script sees it)
+    stopped = _load_stopped_services()
+    stopped.add(name)
+    _save_stopped_services(stopped)
+
     if name == "lmstudio":
-        return _lms_stop()
+        return await asyncio.to_thread(_lms_stop)
 
     if name == "opencode":
-        return _opencode_stop()
+        return await asyncio.to_thread(_opencode_stop)
 
-    process_name = service.get("process", name)
+    # Generic process stop — run in thread to avoid blocking event loop
+    return await asyncio.to_thread(_generic_stop, service)
+
+
+def _generic_stop(service: dict) -> dict:
+    """Stop a service by process name (blocking, run via asyncio.to_thread)."""
+    process_name = service.get("process", "")
     procs_to_kill = []
 
-    # Collect matching processes
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
             cmdline = proc.info.get("cmdline") or []
@@ -1158,7 +1178,6 @@ async def stop_service(name: str):
     if not procs_to_kill:
         return {"success": False, "message": "No matching process found"}
 
-    # SIGTERM first (graceful)
     killed = []
     for proc in procs_to_kill:
         try:
@@ -1167,10 +1186,8 @@ async def stop_service(name: str):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
-    # Wait up to 3s for graceful shutdown
     gone, alive = psutil.wait_procs(procs_to_kill, timeout=3)
 
-    # SIGKILL stubborn processes
     force_killed = []
     for proc in alive:
         try:
