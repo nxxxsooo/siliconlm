@@ -25,7 +25,7 @@ from download_manager import download_manager, PRESET_MODELS
 async def lifespan(app):
     # Startup
     download_manager.start()
-    # Auto-start services that are enabled and not manually stopped
+    # Auto-start services that were running before last shutdown
     asyncio.create_task(_autostart_services())
     yield
     # Shutdown
@@ -33,13 +33,11 @@ async def lifespan(app):
 
 
 async def _autostart_services():
-    """Auto-start enabled services on dashboard launch, unless manually stopped."""
+    """Auto-start services that were explicitly started before last shutdown."""
     await asyncio.sleep(1)  # Brief delay to let FastAPI finish initializing
-    settings = load_settings()
-    stopped = _load_stopped_services()
-    service_settings = settings.get("services", {})
+    started = _load_started_services()
     for name in ("mlx_embeddings", "lmstudio"):
-        if service_settings.get(name, {}).get("enabled", True) and name not in stopped:
+        if name in started:
             try:
                 await start_service(name)
             except Exception:
@@ -161,6 +159,9 @@ def save_settings(settings):
 _STOPPED_SERVICES_FILE = (
     Path.home() / ".local" / "share" / "siliconlm" / "stopped_services.json"
 )
+_STARTED_SERVICES_FILE = (
+    Path.home() / ".local" / "share" / "siliconlm" / "started_services.json"
+)
 
 
 def _load_stopped_services() -> set:
@@ -175,6 +176,20 @@ def _load_stopped_services() -> set:
 def _save_stopped_services(stopped: set):
     _STOPPED_SERVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
     _STOPPED_SERVICES_FILE.write_text(json.dumps(list(stopped)))
+
+
+def _load_started_services() -> set:
+    try:
+        if _STARTED_SERVICES_FILE.exists():
+            return set(json.loads(_STARTED_SERVICES_FILE.read_text()))
+    except Exception:
+        pass
+    return set()
+
+
+def _save_started_services(started: set):
+    _STARTED_SERVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _STARTED_SERVICES_FILE.write_text(json.dumps(list(started)))
 
 
 _settings = load_settings()
@@ -1204,6 +1219,10 @@ async def start_service(name: str):
     if not service:
         return {"success": False, "message": "Unknown service"}
 
+    # Track that this service was explicitly started
+    started = _load_started_services()
+    started.add(name)
+    _save_started_services(started)
     # Remove from stopped services when starting
     stopped = _load_stopped_services()
     stopped.discard(name)
@@ -1376,6 +1395,10 @@ async def stop_service(name: str):
     if not service:
         return {"success": False, "message": "Unknown service"}
 
+    # Remove from started services (so it won't auto-start next time)
+    started = _load_started_services()
+    started.discard(name)
+    _save_started_services(started)
     # Persist stopped state BEFORE blocking kill (so restart script sees it)
     stopped = _load_stopped_services()
     stopped.add(name)

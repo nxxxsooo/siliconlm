@@ -1115,6 +1115,64 @@
 
         // ========== CLI Agents ==========
         let cliAgents = [];
+        let cliAgentsActionRunning = false;
+
+        function renderCliAgents() {
+            const container = document.getElementById('cli-agents-container');
+            if (!container) return;
+            if (!cliAgents.length) {
+                container.innerHTML = '<div class="text-gray-500 text-sm">No agents found.</div>';
+                return;
+            }
+
+            const statusBadge = (agent) => {
+                if (!agent.installed) return '<span class="px-1.5 py-0.5 rounded text-[10px] bg-dark-600 text-gray-400">Not installed</span>';
+                if (agent.status === 'outdated') return '<span class="px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/20 text-yellow-400">Outdated</span>';
+                return '<span class="px-1.5 py-0.5 rounded text-[10px] bg-green-500/20 text-green-400">Up to date</span>';
+            };
+
+            const html = cliAgents.map(agent => `
+                <div class="flex items-center justify-between py-2 border-b border-dark-600/50 last:border-0">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-sm text-gray-200 font-mono">${agent.name}</span>
+                        ${statusBadge(agent)}
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0 ml-2">
+                        <span class="text-xs text-gray-500 font-mono">${agent.version || '—'}</span>
+                        ${agent.status === 'outdated' ? `<button onclick="updateAgent('${agent.name}')" ${cliAgentsActionRunning ? 'disabled' : ''} class="text-xs px-2 py-0.5 rounded bg-dark-600 hover:bg-dark-500 text-gray-300 transition-colors disabled:opacity-50">Update</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            const hasOutdated = cliAgents.some(a => a.status === 'outdated');
+            container.innerHTML = `
+                <div class="space-y-0">${html}</div>
+                ${hasOutdated ? `<div class="mt-3 pt-3 border-t border-dark-600/50"><button onclick="updateAllAgents()" ${cliAgentsActionRunning ? 'disabled' : ''} class="text-xs px-3 py-1.5 rounded-lg bg-dark-600 hover:bg-dark-500 text-gray-300 transition-colors disabled:opacity-50">${cliAgentsActionRunning ? 'Updating…' : 'Update All'}</button></div>` : ''}
+            `;
+        }
+
+        async function updateAgent(name) {
+            if (cliAgentsActionRunning) return;
+            cliAgentsActionRunning = true;
+            renderCliAgents();
+            try {
+                const agent = cliAgents.find(a => a.name === name);
+                if (!agent) return;
+                const res = await fetch('/api/cli-agents/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tools: name })
+                });
+                const data = await res.json();
+                showToast(data.message || (data.success ? 'Update started' : 'Update failed'), data.success ? 'success' : 'error');
+                if (data.success) setTimeout(fetchCliAgents, 2000);
+            } catch (e) {
+                showToast('Update failed', 'error');
+            } finally {
+                cliAgentsActionRunning = false;
+                renderCliAgents();
+            }
+        }
 
         async function fetchOpencodeProfiles() {
             try {
