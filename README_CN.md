@@ -21,17 +21,17 @@ Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量
 ## 架构
 
 ```
-CherryStudio / 客户端
+CherryStudio / OpenCode / 客户端
         │
         ▼
-http://localhost:8765/v1/*  (SiliconLM 代理)
+http://localhost:1234/v1/*  (SiliconLM 代理)
         │
    ┌────┴────┐
    ▼         ▼
 /v1/embeddings   /v1/chat/*
    │              │
    ▼              ▼
-:8766 (MLX)    :1234 (LMStudio)
+:8766 (MLX)    :11234 (LMStudio)
    │
    ├─► MLX (bert, roberta)
    ├─► mlx-lm (Qwen3, gte-Qwen2)
@@ -61,14 +61,14 @@ python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
     mlx mlx-embeddings mlx-lm sentence-transformers
 
-# 启动面板（端口 8765）
+# 启动面板（端口 1234）
 .venv/bin/python server.py
 
 # 启动嵌入服务（端口 8766）
 .venv/bin/python embedding_server.py
 
 # 打开面板
-open http://localhost:8765
+open http://localhost:1234
 ```
 
 ## Shell 别名
@@ -80,12 +80,12 @@ open http://localhost:8765
 alias slm='cd ~/Documents/sync/GitHub/siliconlm && \
     nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & \
     nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&1 & \
-    sleep 2 && open http://localhost:8765'
+    sleep 2 && open http://localhost:1234'
 ```
 
 ## API 接口
 
-### 面板服务（端口 8765）
+### 面板服务（端口 1234）
 
 | 接口 | 方法 | 描述 |
 |------|------|------|

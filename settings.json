@@ -7,7 +7,7 @@
     },
     "lmstudio": {
       "enabled": true,
-      "port": 1234
+      "port": 11234
     },
     "opencode": {
       "enabled": true

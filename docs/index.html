@@ -304,7 +304,7 @@ Repository: https://github.com/nxxxsooo/siliconlm
 Steps:
 1. Clone the repo to ~/Documents/sync/GitHub/siliconlm (or ask me where)
 2. Create a Python venv and install requirements.txt
-3. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+3. Start the dashboard (server.py on port 1234) and embedding server (embedding_server.py on port 8766)
 4. Add shell aliases to my ~/.zshrc for easy startup
 
 Requirements:
@@ -312,10 +312,10 @@ Requirements:
 - Python 3.10+
 - No API keys or secrets needed
 
-After setup, open http://localhost:8765 to verify the dashboard is running.
+After setup, open http://localhost:1234 to verify the dashboard is running.
 
 Shell alias to add:
-alias slm='cd ~/Documents/sync/GitHub/siliconlm &amp;&amp; nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&amp;1 &amp; nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&amp;1 &amp; sleep 2 &amp;&amp; open http://localhost:8765'</pre>
+alias slm='cd ~/Documents/sync/GitHub/siliconlm &amp;&amp; nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&amp;1 &amp; nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&amp;1 &amp; sleep 2 &amp;&amp; open http://localhost:1234'</pre>
             </div>
         </div>
     </section>

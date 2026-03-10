@@ -21,17 +21,17 @@ Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings,
 ## Architecture
 
 ```
-CherryStudio / Client
+CherryStudio / OpenCode / Client
         │
         ▼
-http://localhost:8765/v1/*  (SiliconLM Proxy)
+http://localhost:1234/v1/*  (SiliconLM Proxy)
         │
    ┌────┴────┐
    ▼         ▼
 /v1/embeddings   /v1/chat/*
    │              │
    ▼              ▼
-:8766 (MLX)    :1234 (LMStudio)
+:8766 (MLX)    :11234 (LMStudio)
    │
    ├─► MLX (bert, roberta)
    ├─► mlx-lm (Qwen3, gte-Qwen2)
@@ -61,14 +61,14 @@ python3 -m venv .venv
 .venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
     mlx mlx-embeddings mlx-lm sentence-transformers
 
-# Run dashboard (port 8765)
+# Run dashboard (port 1234)
 .venv/bin/python server.py
 
 # Run embedding server (port 8766)
 .venv/bin/python embedding_server.py
 
 # Open dashboard
-open http://localhost:8765
+open http://localhost:1234
 ```
 
 ## 🤖 Let AI Set It Up
@@ -83,7 +83,7 @@ Repository: https://github.com/nxxxsooo/siliconlm
 Steps:
 1. Clone the repo (ask me where to put it)
 2. Create a Python venv and install requirements.txt
-3. Start the dashboard (server.py on port 8765) and embedding server (embedding_server.py on port 8766)
+3. Start the dashboard (server.py on port 1234) and embedding server (embedding_server.py on port 8766)
 4. Add shell aliases to my ~/.zshrc for easy startup
 
 Requirements:
@@ -91,7 +91,7 @@ Requirements:
 - Python 3.10+
 - No API keys or secrets needed
 
-After setup, open http://localhost:8765 to verify the dashboard is running.
+After setup, open http://localhost:1234 to verify the dashboard is running.
 ```
 
 ## Shell Alias
@@ -103,12 +103,12 @@ Add to `~/.zshrc`:
 alias slm='cd ~/Documents/sync/GitHub/siliconlm && \
     nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & \
     nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&1 & \
-    sleep 2 && open http://localhost:8765'
+    sleep 2 && open http://localhost:1234'
 ```
 
 ## API Endpoints
 
-### Dashboard (port 8765)
+### Dashboard (port 1234)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
