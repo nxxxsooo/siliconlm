@@ -25,9 +25,25 @@ from download_manager import download_manager, PRESET_MODELS
 async def lifespan(app):
     # Startup
     download_manager.start()
+    # Auto-start services that are enabled and not manually stopped
+    asyncio.create_task(_autostart_services())
     yield
     # Shutdown
     download_manager.stop()
+
+
+async def _autostart_services():
+    """Auto-start enabled services on dashboard launch, unless manually stopped."""
+    await asyncio.sleep(1)  # Brief delay to let FastAPI finish initializing
+    settings = load_settings()
+    stopped = _load_stopped_services()
+    service_settings = settings.get("services", {})
+    for name in ("mlx_embeddings", "lmstudio"):
+        if service_settings.get(name, {}).get("enabled", True) and name not in stopped:
+            try:
+                await start_service(name)
+            except Exception:
+                pass
 
 
 app = FastAPI(title="SiliconLM", lifespan=lifespan)
