@@ -92,6 +92,9 @@
                 <div class="sidebar-item" onclick="switchSection('models')" data-nav="models">
                     <span class="sidebar-icon">📦</span> Models
                 </div>
+                <div class="sidebar-item" onclick="switchSection('opencode')" data-nav="opencode">
+                    <span class="sidebar-icon">🤖</span> OpenCode
+                </div>
             </div>
         </nav>
 
@@ -271,6 +274,18 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ====== SECTION: OpenCode ====== -->
+            <div class="section-panel" data-section="opencode">
+                <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">OpenCode Profiles</h2>
+                    </div>
+                    <div id="opencode-profiles-container" class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div class="text-gray-500 text-sm">Loading profiles...</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -368,6 +383,7 @@
         // ========== App State ==========
         let presets = [];
         let allModels = [];
+        let opencodeProfiles = null;
         let sortField = 'size';
         let sortAsc = false;
         
@@ -1099,63 +1115,90 @@
 
         // ========== CLI Agents ==========
         let cliAgents = [];
-        let cliAgentsActionRunning = false;
 
-        function getStatusBadgeClass(status) {
-            switch(status) {
-                case 'current': return 'bg-green-900/30 text-green-400 border border-green-800/50';
-                case 'outdated': return 'bg-yellow-900/30 text-yellow-400 border border-yellow-800/50';
-                case 'missing': return 'bg-red-900/30 text-red-400 border border-red-800/50';
-                default: return 'bg-gray-900/30 text-gray-400 border border-gray-800/50';
+        async function fetchOpencodeProfiles() {
+            try {
+                const res = await fetch('/api/opencode/profiles');
+                opencodeProfiles = await res.json();
+                renderOpencodeProfiles();
+            } catch (e) {
+                console.error('OpenCode Profiles fetch error:', e);
+            }
+        }
+        
+        async function switchOpencodeProfile(profileId) {
+            try {
+                const res = await fetch('/api/opencode/profile/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profile_id: profileId })
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    fetchOpencodeProfiles();
+                }
+            } catch (e) {
+                showToast('Failed to switch profile: ' + e.message, 'error');
             }
         }
 
-        function renderCliAgents() {
-            const container = document.getElementById('cli-agents-container');
-            if (!cliAgents || cliAgents.length === 0) {
-                container.innerHTML = '<div class="text-gray-500 text-sm">Loading...</div>';
+        function renderOpencodeProfiles() {
+            const container = document.getElementById('opencode-profiles-container');
+            if (!opencodeProfiles || !opencodeProfiles.profiles) {
+                container.innerHTML = '<div class="text-gray-500 text-sm p-4">Profiles not loaded.</div>';
                 return;
             }
 
-            const hasMissing = cliAgents.some(a => a.status === 'missing');
-            const hasOutdated = cliAgents.some(a => a.status === 'outdated');
+            const getModelName = (modelPath) => {
+                if (!modelPath) return 'default';
+                return modelPath.split('/').pop();
+            };
 
-            let html = '';
-
-            if (hasMissing || hasOutdated) {
-                html += '<div class="flex gap-2 mb-4">';
-                if (hasMissing) {
-                    html += `<button onclick="installAllAgents()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white transition-all" data-i18n="installAll" ${cliAgentsActionRunning ? 'disabled' : ''}>
-                        ${cliAgentsActionRunning ? t('installing') : t('installAll')}
-                    </button>`;
+            const html = opencodeProfiles.profiles.map(p => {
+                const isActive = p.isActive;
+                const borderClass = isActive ? 'border-accent' : 'border-dark-600 hover:border-dark-500';
+                const bgClass = isActive ? 'bg-dark-800' : 'bg-dark-700/50';
+                
+                // agents
+                let agentsHtml = '';
+                if (p.agents) {
+                    const agentKeys = ['sisyphus', 'oracle', 'multimodal-looker', 'prometheus', 'atlas', 'explore', 'sisyphus-junior', 'librarian'];
+                    
+                    agentsHtml = agentKeys.map(key => {
+                        const agentData = p.agents[key];
+                        if (agentData && agentData.disable) return ''; // Skip disabled
+                        const model = agentData ? getModelName(agentData.model) : 'default';
+                        
+                        return `
+                            <div class="flex items-center justify-between py-1 border-b border-dark-600/50 last:border-0">
+                                <span class="text-xs text-gray-400 capitalize">${key}</span>
+                                <span class="text-xs text-gray-300 font-mono bg-dark-700 px-1.5 py-0.5 rounded truncate max-w-[200px] text-right" title="${model}">${model}</span>
+                            </div>
+                        `;
+                    }).join('');
                 }
-                if (hasOutdated) {
-                    html += `<button onclick="updateAllAgents()" class="bg-yellow-900/50 hover:bg-yellow-900 text-yellow-400 px-4 py-2 rounded-lg text-sm font-medium transition-all" data-i18n="updateAll" ${cliAgentsActionRunning ? 'disabled' : ''}>
-                        ${cliAgentsActionRunning ? t('updating') : t('updateAll')}
-                    </button>`;
-                }
-                html += '</div>';
-            }
 
-            html += '<div class="overflow-x-auto"><table class="w-full text-sm">';
-            html += '<thead class="bg-dark-700/50"><tr>';
-            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="name">${t('name')}</th>`;
-            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="version">${t('version')}</th>`;
-            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="latest">${t('latest')}</th>`;
-            html += `<th class="text-left p-3 text-xs text-gray-500 font-medium" data-i18n="status">${t('status')}</th>`;
-            html += '</tr></thead>';
-            html += '<tbody>';
-            for (const agent of cliAgents) {
-                html += '<tr class="border-t border-dark-600 hover:bg-dark-700/30">';
-                html += `<td class="p-3 font-medium text-white">${agent.name}</td>`;
-                html += `<td class="p-3 text-gray-400">${agent.version || '--'}</td>`;
-                html += `<td class="p-3 text-gray-400">${agent.latest || '--'}</td>`;
-                const statusLabel = t(agent.status || 'unknown');
-                html += `<td class="p-3"><span class="badge ${getStatusBadgeClass(agent.status)}">${statusLabel}</span></td>`;
-                html += '</tr>';
-            }
-            html += '</tbody></table></div>';
-
+                return `
+                <div class="card rounded-xl p-4 border transition-all ${borderClass} ${bgClass}">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-md font-semibold text-white">${p.name}</h3>
+                                ${isActive ? '<span class="px-2 py-0.5 rounded-full bg-accent/20 text-accent text-[10px] font-medium uppercase tracking-wider">Active</span>' : ''}
+                            </div>
+                            <div class="text-xs text-gray-500 font-mono mt-1">${p.id}</div>
+                        </div>
+                        ${!isActive ? `<button onclick="switchOpencodeProfile('${p.id}')" class="bg-dark-600 hover:bg-dark-500 px-4 py-1.5 rounded-lg text-sm text-gray-300 transition-colors shadow-sm">Switch</button>` : ''}
+                    </div>
+                    
+                    <div class="mt-2 space-y-1">
+                        ${agentsHtml || '<div class="text-xs text-gray-500">No agents defined</div>'}
+                    </div>
+                </div>
+                `;
+            }).join('');
+            
             container.innerHTML = html;
         }
 
@@ -1221,8 +1264,10 @@
 
         fetchStatus();
         fetchCliAgents();
+        fetchOpencodeProfiles();
         setInterval(fetchStatus, 2000);
         setInterval(fetchCliAgents, 30000);
+        setInterval(fetchOpencodeProfiles, 10000); // 10 seconds should be fine
         
         // ========== Search HuggingFace Modal ==========
         function openSearchModal() {

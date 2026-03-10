@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from download_manager import download_manager, PRESET_MODELS
+
+
 @asynccontextmanager
 async def lifespan(app):
     # Startup
@@ -35,7 +37,7 @@ DEFAULT_SETTINGS = {
     "models_dir": "~/.lmstudio/models",
     "services": {
         "mlx_embeddings": {"enabled": True, "port": 8766},
-        "lmstudio": {"enabled": True, "port": 1234},
+        "lmstudio": {"enabled": True, "port": 11234},
         "opencode": {"enabled": True},
     },
     "embedding": {"max_batch_size": 32, "max_input_chars": 8192},
@@ -49,11 +51,101 @@ def load_settings():
     return DEFAULT_SETTINGS.copy()
 
 
+def get_opencode_profiles():
+    config_dir = Path.home() / ".config" / "opencode"
+    active_config = config_dir / "oh-my-opencode.json"
+
+    profiles = [
+        {
+            "id": "relay",
+            "file": "oh-my-opencode-relay-up.json",
+            "name": "Claude Opus via Relay",
+        },
+        {
+            "id": "sonnet",
+            "file": "oh-my-opencode-sonnet.json",
+            "name": "Claude Sonnet via Relay 2",
+        },
+        {"id": "qwen", "file": "oh-my-opencode-qwen.json", "name": "Qwen Fallback"},
+        {
+            "id": "gemini",
+            "file": "oh-my-opencode-gemini.json",
+            "name": "Gemini AI Studio",
+        },
+    ]
+
+    active_id = "custom"
+    if not active_config.exists():
+        active_id = "none"
+    else:
+        try:
+            active_data = json.loads(active_config.read_text())
+            for p in profiles:
+                p_file = config_dir / p["file"]
+                if p_file.exists():
+                    p_data = json.loads(p_file.read_text())
+                    if active_data == p_data:
+                        active_id = p["id"]
+                        break
+        except Exception:
+            pass
+
+    results = []
+    for p in profiles:
+        p_file = config_dir / p["file"]
+        agents = {}
+        if p_file.exists():
+            try:
+                data = json.loads(p_file.read_text())
+                agents = data.get("agents", {})
+            except Exception:
+                pass
+        results.append(
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "agents": agents,
+                "isActive": active_id == p["id"],
+            }
+        )
+
+    return {"active": active_id, "profiles": results}
+
+
+def switch_opencode_profile(profile_id: str):
+    config_dir = Path.home() / ".config" / "opencode"
+    active_config = config_dir / "oh-my-opencode.json"
+
+    profiles = {
+        "relay": "oh-my-opencode-relay-up.json",
+        "sonnet": "oh-my-opencode-sonnet.json",
+        "qwen": "oh-my-opencode-qwen.json",
+        "gemini": "oh-my-opencode-gemini.json",
+    }
+
+    if profile_id not in profiles:
+        return False, "Profile not found"
+
+    target_file = config_dir / profiles[profile_id]
+    if not target_file.exists():
+        return False, f"Config file not found: {target_file.name}"
+
+    try:
+        shutil.copy2(target_file, active_config)
+        return True, f"Switched to {profile_id}"
+    except Exception as e:
+        return False, str(e)
+
+
 def save_settings(settings):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=2)
 
-_STOPPED_SERVICES_FILE = Path.home() / ".local" / "share" / "siliconlm" / "stopped_services.json"
+
+_STOPPED_SERVICES_FILE = (
+    Path.home() / ".local" / "share" / "siliconlm" / "stopped_services.json"
+)
+
 
 def _load_stopped_services() -> set:
     try:
@@ -63,14 +155,16 @@ def _load_stopped_services() -> set:
         pass
     return set()
 
+
 def _save_stopped_services(stopped: set):
     _STOPPED_SERVICES_FILE.parent.mkdir(parents=True, exist_ok=True)
     _STOPPED_SERVICES_FILE.write_text(json.dumps(list(stopped)))
 
+
 _settings = load_settings()
 PROXY_TARGETS = {
     "embeddings": "http://localhost:8766",
-    "lmstudio": "http://localhost:1234",
+    "lmstudio": "http://localhost:11234",
 }
 
 EMBEDDING_MODELS = {"embed", "gte-", "bge-", "e5-", "mxbai-embed", "nomic-embed"}
@@ -129,8 +223,6 @@ from collections import deque
 _activity_log = deque(maxlen=50)
 
 
-
-
 # Static files
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
@@ -161,7 +253,7 @@ SERVICES = {
     },
     "lmstudio": {
         "display": "LMStudio (llmster)",
-        "port": 1234,
+        "port": 11234,
         "check": "lmstudio",
         "process": "llmster",
     },
@@ -209,8 +301,11 @@ def _lmstudio_status() -> dict:
     # Daemon is running, check if HTTP server responds
     try:
         import urllib.request
-        with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=2) as resp:
-            return {"daemon_running": True, "running": True, "pid": pid, "port": 1234}
+
+        with urllib.request.urlopen(
+            "http://127.0.0.1:11234/v1/models", timeout=2
+        ) as resp:
+            return {"daemon_running": True, "running": True, "pid": pid, "port": 11234}
     except Exception:
         return {"daemon_running": True, "running": False, "pid": pid, "port": None}
 
@@ -261,7 +356,10 @@ def get_service_status(name: str) -> dict:
             models = []
             try:
                 import urllib.request
-                with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=2) as resp:
+
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:11234/v1/models", timeout=2
+                ) as resp:
                     data = json.loads(resp.read().decode())
                     models = data.get("data", [])
             except Exception:
@@ -269,8 +367,7 @@ def get_service_status(name: str) -> dict:
             status["metrics"] = {
                 "models_loaded": len(models),
                 "loaded_models": [
-                    {"id": m.get("id", ""), "type": "llm"}
-                    for m in models[:8]
+                    {"id": m.get("id", ""), "type": "llm"} for m in models[:8]
                 ],
                 "total_requests": _lmstudio_stats["requests"],
                 "total_tokens": _lmstudio_stats["tokens"],
@@ -403,6 +500,7 @@ def get_system_stats() -> dict:
         "machine": get_machine_info(),
     }
 
+
 async def _fetch_latest_github_release(repo: str) -> Optional[str]:
     """Fetch latest release tag from GitHub."""
     try:
@@ -437,28 +535,45 @@ async def _check_opencode() -> dict:
         # Check common install locations since launchd PATH is minimal
         opencode_path = shutil.which("opencode")
         if not opencode_path:
-            for p in [Path.home() / ".local" / "bin" / "opencode", Path("/opt/homebrew/bin/opencode")]:
+            for p in [
+                Path.home() / ".local" / "bin" / "opencode",
+                Path("/opt/homebrew/bin/opencode"),
+            ]:
                 if p.exists():
                     opencode_path = str(p)
                     break
         if not opencode_path:
             return {
-                "name": name, "category": category, "installed": False,
-                "version": None, "latest": None, "status": "missing",
-                "install_cmd": install_cmd, "update_cmd": update_cmd,
+                "name": name,
+                "category": category,
+                "installed": False,
+                "version": None,
+                "latest": None,
+                "status": "missing",
+                "install_cmd": install_cmd,
+                "update_cmd": update_cmd,
             }
         version_result = await asyncio.to_thread(
             subprocess.run,
-            [opencode_path, "--version"], capture_output=True, text=True, timeout=5
+            [opencode_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
-        version = version_result.stdout.strip().split()[-1] if version_result.returncode == 0 else None
+        version = (
+            version_result.stdout.strip().split()[-1]
+            if version_result.returncode == 0
+            else None
+        )
         # Use brew info to get latest version (opencode is in homebrew-core)
         latest = None
         try:
             brew_result = await asyncio.to_thread(
                 subprocess.run,
                 ["/opt/homebrew/bin/brew", "info", "--json=v2", "opencode"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if brew_result.returncode == 0:
                 brew_data = json.loads(brew_result.stdout)
@@ -471,6 +586,7 @@ async def _check_opencode() -> dict:
         if version and latest:
             try:
                 from packaging.version import Version
+
                 if Version(version) < Version(latest):
                     status = "outdated"
             except Exception:
@@ -480,15 +596,25 @@ async def _check_opencode() -> dict:
         elif not latest:
             status = "current"  # Can't determine latest, assume current
         return {
-            "name": name, "category": category, "installed": True,
-            "version": version, "latest": latest, "status": status,
-            "install_cmd": install_cmd, "update_cmd": update_cmd,
+            "name": name,
+            "category": category,
+            "installed": True,
+            "version": version,
+            "latest": latest,
+            "status": status,
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
         }
     except Exception:
         return {
-            "name": name, "category": category, "installed": False,
-            "version": None, "latest": None, "status": "unknown",
-            "install_cmd": install_cmd, "update_cmd": update_cmd,
+            "name": name,
+            "category": category,
+            "installed": False,
+            "version": None,
+            "latest": None,
+            "status": "unknown",
+            "install_cmd": install_cmd,
+            "update_cmd": update_cmd,
         }
 
 
@@ -513,9 +639,14 @@ async def _check_lmstudio_cli() -> dict:
     try:
         version_result = await asyncio.to_thread(
             subprocess.run,
-            [str(lms_path), "--version"], capture_output=True, text=True, timeout=5
+            [str(lms_path), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
-        version = version_result.stdout.strip() if version_result.returncode == 0 else None
+        version = (
+            version_result.stdout.strip() if version_result.returncode == 0 else None
+        )
         return {
             "name": name,
             "category": category,
@@ -549,7 +680,9 @@ async def _check_mlx_tools() -> list[dict]:
     category = "mlx_tools"
     install_tpl = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install <package>"
     update_tpl = "cd ~/.local/share/siliconlm && source venv/bin/activate && pip install --upgrade <package>"
-    venv_pip = str(Path.home() / ".local" / "share" / "siliconlm" / "venv" / "bin" / "pip")
+    venv_pip = str(
+        Path.home() / ".local" / "share" / "siliconlm" / "venv" / "bin" / "pip"
+    )
 
     async def _check_one(tool: dict) -> dict:
         install_cmd = install_tpl.replace("<package>", tool["package"])
@@ -558,14 +691,21 @@ async def _check_mlx_tools() -> list[dict]:
             pip_result = await asyncio.to_thread(
                 subprocess.run,
                 [venv_pip, "show", tool["package"]],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if pip_result.returncode != 0:
                 latest = await _fetch_latest_pypi_version(tool["package"])
                 return {
-                    "name": tool["name"], "category": category,
-                    "installed": False, "version": None, "latest": latest,
-                    "status": "missing", "install_cmd": install_cmd, "update_cmd": update_cmd,
+                    "name": tool["name"],
+                    "category": category,
+                    "installed": False,
+                    "version": None,
+                    "latest": latest,
+                    "status": "missing",
+                    "install_cmd": install_cmd,
+                    "update_cmd": update_cmd,
                 }
             version = None
             for line in pip_result.stdout.split("\n"):
@@ -577,6 +717,7 @@ async def _check_mlx_tools() -> list[dict]:
             if version and latest:
                 try:
                     from packaging.version import Version
+
                     if Version(version) < Version(latest):
                         status = "outdated"
                 except Exception:
@@ -585,16 +726,26 @@ async def _check_mlx_tools() -> list[dict]:
             else:
                 status = "unknown"
             return {
-                "name": tool["name"], "category": category,
-                "installed": True, "version": version, "latest": latest,
-                "status": status, "install_cmd": install_cmd, "update_cmd": update_cmd,
+                "name": tool["name"],
+                "category": category,
+                "installed": True,
+                "version": version,
+                "latest": latest,
+                "status": status,
+                "install_cmd": install_cmd,
+                "update_cmd": update_cmd,
             }
         except Exception:
             latest = await _fetch_latest_pypi_version(tool["package"])
             return {
-                "name": tool["name"], "category": category,
-                "installed": False, "version": None, "latest": latest,
-                "status": "unknown", "install_cmd": install_cmd, "update_cmd": update_cmd,
+                "name": tool["name"],
+                "category": category,
+                "installed": False,
+                "version": None,
+                "latest": latest,
+                "status": "unknown",
+                "install_cmd": install_cmd,
+                "update_cmd": update_cmd,
             }
 
     return list(await asyncio.gather(*[_check_one(t) for t in tools]))
@@ -612,44 +763,57 @@ async def _check_brew_packages() -> list[dict]:
             brew_result = await asyncio.to_thread(
                 subprocess.run,
                 ["brew", "list", "--versions", pkg["brew_name"]],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if brew_result.returncode != 0:
-                results.append({
+                results.append(
+                    {
+                        "name": pkg["name"],
+                        "category": category,
+                        "installed": False,
+                        "version": None,
+                        "latest": None,
+                        "status": "missing",
+                        "install_cmd": install_cmd.replace(
+                            "<package>", pkg["brew_name"]
+                        ),
+                        "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
+                    }
+                )
+                continue
+            version = (
+                brew_result.stdout.strip().split()[-1]
+                if brew_result.stdout.strip()
+                else None
+            )
+            results.append(
+                {
+                    "name": pkg["name"],
+                    "category": category,
+                    "installed": True,
+                    "version": version,
+                    "latest": None,
+                    "status": "current",
+                    "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
+                    "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
+                }
+            )
+        except Exception:
+            results.append(
+                {
                     "name": pkg["name"],
                     "category": category,
                     "installed": False,
                     "version": None,
                     "latest": None,
-                    "status": "missing",
+                    "status": "unknown",
                     "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
                     "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
-                })
-                continue
-            version = brew_result.stdout.strip().split()[-1] if brew_result.stdout.strip() else None
-            results.append({
-                "name": pkg["name"],
-                "category": category,
-                "installed": True,
-                "version": version,
-                "latest": None,
-                "status": "current",
-                "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
-                "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
-            })
-        except Exception:
-            results.append({
-                "name": pkg["name"],
-                "category": category,
-                "installed": False,
-                "version": None,
-                "latest": None,
-                "status": "unknown",
-                "install_cmd": install_cmd.replace("<package>", pkg["brew_name"]),
-                "update_cmd": update_cmd.replace("<package>", pkg["brew_name"]),
-            })
+                }
+            )
     return results
-
 
 
 def _refresh_models_cache_if_needed(force: bool = False):
@@ -853,6 +1017,21 @@ async def update_settings(request: Request):
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/opencode/profiles")
+async def api_get_opencode_profiles():
+    return get_opencode_profiles()
+
+
+class ProfileSwitchRequest(BaseModel):
+    profile_id: str
+
+
+@app.post("/api/opencode/profile/switch")
+async def api_switch_opencode_profile(req: ProfileSwitchRequest):
+    success, message = switch_opencode_profile(req.profile_id)
+    return {"success": success, "message": message}
+
+
 @app.get("/api/cli-agents")
 async def get_cli_agents():
     """Return status of all monitored CLI tools."""
@@ -885,7 +1064,10 @@ async def _run_shell_command(cmd: str, timeout: int = 60) -> tuple[bool, str]:
         if result.returncode == 0:
             return True, result.stdout.strip() or "Command completed successfully"
         else:
-            return False, result.stderr.strip() or result.stdout.strip() or "Command failed"
+            return (
+                False,
+                result.stderr.strip() or result.stdout.strip() or "Command failed",
+            )
     except subprocess.TimeoutExpired:
         return False, f"Command timed out after {timeout} seconds"
     except Exception as e:
@@ -905,36 +1087,44 @@ async def install_cli_agents(request: Request):
     if requested_tools == "all":
         target_agents = agents
     else:
-        target_tools = requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        target_tools = (
+            requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        )
         target_agents = [a for a in agents if a["name"] in target_tools]
     # Process each tool
     results = []
     for agent in target_agents:
         name = agent["name"]
         if agent["status"] != "missing":
-            results.append({
-                "name": name,
-                "success": True,
-                "message": f"{name} is already installed",
-            })
+            results.append(
+                {
+                    "name": name,
+                    "success": True,
+                    "message": f"{name} is already installed",
+                }
+            )
             continue
         # Check if installable
         if name == "lmstudio-cli":
-            results.append({
-                "name": name,
-                "success": False,
-                "message": "Install/update via LMStudio app",
-            })
+            results.append(
+                {
+                    "name": name,
+                    "success": False,
+                    "message": "Install/update via LMStudio app",
+                }
+            )
             continue
         # Run install command
         install_cmd = agent["install_cmd"]
         timeout = 60 if "brew" in install_cmd else 30
         success, message = await _run_shell_command(install_cmd, timeout=timeout)
-        results.append({
-            "name": name,
-            "success": success,
-            "message": message,
-        })
+        results.append(
+            {
+                "name": name,
+                "success": success,
+                "message": message,
+            }
+        )
     return {"results": results}
 
 
@@ -951,37 +1141,46 @@ async def update_cli_agents(request: Request):
     if requested_tools == "all":
         target_agents = agents
     else:
-        target_tools = requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        target_tools = (
+            requested_tools if isinstance(requested_tools, list) else [requested_tools]
+        )
         target_agents = [a for a in agents if a["name"] in target_tools]
     # Process each tool
     results = []
     for agent in target_agents:
         name = agent["name"]
         if agent["status"] not in ("outdated", "unknown"):
-            results.append({
-                "name": name,
-                "success": True,
-                "message": f"{name} is already up to date",
-            })
+            results.append(
+                {
+                    "name": name,
+                    "success": True,
+                    "message": f"{name} is already up to date",
+                }
+            )
             continue
         # Check if updatable
         if name == "lmstudio-cli":
-            results.append({
-                "name": name,
-                "success": False,
-                "message": "Install/update via LMStudio app",
-            })
+            results.append(
+                {
+                    "name": name,
+                    "success": False,
+                    "message": "Install/update via LMStudio app",
+                }
+            )
             continue
         # Run update command
         update_cmd = agent["update_cmd"]
         timeout = 120 if "pip" in update_cmd else (60 if "brew" in update_cmd else 30)
         success, message = await _run_shell_command(update_cmd, timeout=timeout)
-        results.append({
-            "name": name,
-            "success": success,
-            "message": message,
-        })
+        results.append(
+            {
+                "name": name,
+                "success": success,
+                "message": message,
+            }
+        )
     return {"results": results}
+
 
 @app.post("/api/service/{name}/start")
 async def start_service(name: str):
@@ -1032,21 +1231,27 @@ def _lms_start() -> dict:
     """Start llmster daemon directly (bypasses broken lms CLI passkey auth)."""
     # Check if already running
     if check_process("llmster"):
-        if check_port(1234):
+        if check_port(11234):
             return {"success": True, "message": "llmster already running"}
         return {"success": True, "message": "llmster daemon running (server starting)"}
 
     # Find llmster binary
     llmster_dir = Path.home() / ".lmstudio" / "llmster"
     if not llmster_dir.exists():
-        return {"success": False, "message": "llmster not installed (no ~/.lmstudio/llmster/)"}
+        return {
+            "success": False,
+            "message": "llmster not installed (no ~/.lmstudio/llmster/)",
+        }
     # Get latest version directory
     versions = sorted(llmster_dir.iterdir(), reverse=True)
     if not versions:
         return {"success": False, "message": "No llmster versions found"}
     llmster_bin = versions[0] / "llmster"
     if not llmster_bin.exists():
-        return {"success": False, "message": f"llmster binary not found at {llmster_bin}"}
+        return {
+            "success": False,
+            "message": f"llmster binary not found at {llmster_bin}",
+        }
 
     try:
         log_file = Path.home() / "Library" / "Logs" / "siliconlm" / "llmster.log"
@@ -1054,18 +1259,23 @@ def _lms_start() -> dict:
         with open(log_file, "a") as f:
             subprocess.Popen(
                 [str(llmster_bin)],
-                stdout=f, stderr=f, start_new_session=True,
+                stdout=f,
+                stderr=f,
+                start_new_session=True,
                 cwd=str(versions[0]),
             )
         # Wait for server to come up
         for _ in range(20):
-            if check_port(1234):
+            if check_port(11234):
                 pid = check_process("llmster")
                 return {"success": True, "message": f"llmster started (PID: {pid})"}
             time.sleep(0.5)
         pid = check_process("llmster")
         if pid:
-            return {"success": True, "message": f"llmster daemon started (PID: {pid}), server may still be loading"}
+            return {
+                "success": True,
+                "message": f"llmster daemon started (PID: {pid}), server may still be loading",
+            }
         return {"success": False, "message": "llmster failed to start"}
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -1093,7 +1303,10 @@ def _lms_stop() -> dict:
         for proc in psutil.process_iter(["pid", "cmdline"]):
             try:
                 cmdline = proc.info.get("cmdline") or []
-                if any("liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg for arg in cmdline):
+                if any(
+                    "liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg
+                    for arg in cmdline
+                ):
                     try:
                         proc.kill()
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -1102,6 +1315,7 @@ def _lms_stop() -> dict:
                 pass
         time.sleep(0.2)
     return {"success": True, "message": f"llmster stopped (PIDs: {killed_pids})"}
+
 
 def _opencode_stop() -> dict:
     uid = os.getuid()
@@ -1255,7 +1469,6 @@ class DownloadRequest(BaseModel):
     repo_id: str
 
 
-
 @app.get("/api/downloads")
 async def get_downloads():
     """Get download queue status and presets"""
@@ -1302,7 +1515,6 @@ class SearchRequest(BaseModel):
     filter: str = "embedding"  # "embedding", "llm", "all"
 
 
-
 @app.post("/api/search/huggingface")
 async def search_huggingface(req: SearchRequest):
     """Search HuggingFace for models"""
@@ -1345,7 +1557,7 @@ async def search_huggingface(req: SearchRequest):
 
 # ============================================================================
 # OpenAI-compatible Proxy Routes (/v1/*)
-# Automatically routes embeddings to MLX (8766), others to LMStudio (1234)
+# Automatically routes embeddings to MLX (8766), others to LMStudio (11234)
 # ============================================================================
 
 
@@ -1483,5 +1695,5 @@ async def proxy_v1(request: Request, path: str):
 if __name__ == "__main__":
     import uvicorn
 
-    print("🍎 SiliconLM starting at http://localhost:8765")
-    uvicorn.run(app, host="0.0.0.0", port=8765)
+    print("🍎 SiliconLM starting at http://localhost:1234")
+    uvicorn.run(app, host="0.0.0.0", port=1234)
