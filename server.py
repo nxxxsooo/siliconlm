@@ -55,6 +55,7 @@ DEFAULT_SETTINGS = {
         "opencode": {"enabled": True},
     },
     "embedding": {"max_batch_size": 32, "max_input_chars": 8192},
+    "proxy": {"enabled": False, "host": "127.0.0.1", "port": 7890},
 }
 
 
@@ -1560,7 +1561,15 @@ async def search_huggingface(req: SearchRequest):
     try:
         from huggingface_hub import HfApi
 
-        api = HfApi()
+        # Apply proxy if configured
+        settings = load_settings()
+        proxy_cfg = settings.get("proxy", {})
+        proxies = None
+        if proxy_cfg.get("enabled"):
+            proxy_url = f"http://{proxy_cfg.get('host', '127.0.0.1')}:{proxy_cfg.get('port', 7890)}"
+            proxies = {"https": proxy_url, "http": proxy_url}
+
+        api = HfApi(proxies=proxies)
 
         query = req.query
 
