@@ -360,7 +360,7 @@ def get_service_status(name: str) -> dict:
         lms = _lmstudio_status()
         status["pid"] = lms["pid"]
         status["running"] = lms["running"]
-        status["port"] = lms["port"]
+        status["port"] = lms["port"] or service.get("port")  # fallback to static port
         status["daemon_running"] = lms["daemon_running"]
     elif service.get("check") == "port":
         port = service.get("port")

@@ -95,6 +95,9 @@
                 <div class="sidebar-item" onclick="switchSection('opencode')" data-nav="opencode">
                     <span class="sidebar-icon">🤖</span> OpenCode
                 </div>
+                <div class="sidebar-item" onclick="switchSection('settings')" data-nav="settings">
+                    <span class="sidebar-icon">⚙️</span> Settings
+                </div>
             </div>
         </nav>
 
@@ -106,56 +109,7 @@
                 <div class="flex items-center gap-3 ml-auto">
                     <span id="refresh-indicator" class="text-xs text-gray-500"></span>
                     <button onclick="toggleLang()" class="text-gray-400 hover:text-white transition-colors text-xs font-medium px-2 py-1 rounded border border-dark-600 hover:border-dark-500" id="lang-toggle">EN</button>
-                    <button onclick="toggleSettings()" class="text-gray-400 hover:text-white transition-colors" title="Settings">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        </svg>
-                    </button>
-                </div>
-            </div>
 
-            <!-- Settings Panel (global, always visible when toggled) -->
-            <div id="settings-panel" class="mb-6 hidden">
-                <div class="card rounded-xl p-4">
-                    <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider" data-i18n="settings">Settings</h2>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="text-xs text-gray-500 block mb-1" data-i18n="modelsDir">Models Directory</label>
-                            <input type="text" id="settings-models-dir" 
-                                   class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500 block mb-1" data-i18n="defaultEmbedding">Default Embedding Model</label>
-                            <select id="settings-embedding-model" 
-                                    class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
-                                <option value="">Loading models...</option>
-                            </select>
-                            <div class="text-xs text-gray-600 mt-1" data-i18n="defaultEmbeddingHint">Used when no model is specified in API requests</div>
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500 block mb-2" data-i18n="services">Services</label>
-                            <div class="space-y-2" id="settings-services"></div>
-                        </div>
-                        <div>
-                            <label class="text-xs text-gray-500 block mb-2">Proxy (for HuggingFace search)</label>
-                            <div class="flex items-center gap-3">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" id="settings-proxy-enabled" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent focus:ring-accent">
-                                    <span class="text-sm text-gray-300">Enable</span>
-                                </label>
-                                <input type="text" id="settings-proxy-host" placeholder="127.0.0.1"
-                                       class="w-32 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent">
-                                <span class="text-gray-500">:</span>
-                                <input type="number" id="settings-proxy-port" placeholder="7890"
-                                       class="w-20 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent">
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="saveSettings()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white" data-i18n="save">Save</button>
-                            <button onclick="toggleSettings()" class="bg-dark-600 hover:bg-dark-500 px-4 py-2 rounded-lg text-sm text-gray-300" data-i18n="cancel">Cancel</button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -300,6 +254,45 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ====== SECTION: Settings ====== -->
+            <div class="section-panel" data-section="settings">
+                <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">Settings</h2>
+                <div class="max-w-lg space-y-5">
+                    <div class="card rounded-xl p-4 space-y-4">
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">Models Directory</label>
+                            <input type="text" id="settings-models-dir"
+                                   class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-1">Default Embedding Model</label>
+                            <select id="settings-embedding-model"
+                                    class="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent">
+                                <option value="">Loading models...</option>
+                            </select>
+                            <div class="text-xs text-gray-600 mt-1">Used when no model is specified in API requests</div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500 block mb-2">Proxy (for HuggingFace search)</label>
+                            <div class="flex items-center gap-3">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="settings-proxy-enabled" class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent focus:ring-accent">
+                                    <span class="text-sm text-gray-300">Enable</span>
+                                </label>
+                                <input type="text" id="settings-proxy-host" placeholder="127.0.0.1"
+                                       class="w-32 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent">
+                                <span class="text-gray-500">:</span>
+                                <input type="number" id="settings-proxy-port" placeholder="7890"
+                                       class="w-20 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-accent">
+                            </div>
+                        </div>
+                        <div class="pt-1">
+                            <button onclick="saveSettings()" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium text-white">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -313,6 +306,7 @@
             if (panel) panel.classList.add('active');
             if (nav) nav.classList.add('active');
             localStorage.setItem('siliconlm-section', name);
+            if (name === 'settings') loadSettings();
         }
         // Restore last section
         const savedSection = localStorage.getItem('siliconlm-section');
@@ -618,9 +612,13 @@
                             <div class="status-dot ${dotClass}"></div>
                             <span class="font-medium ${!s.enabled ? 'text-gray-500' : 'text-white'}">${s.display}${daemonBadge}</span>
                         </div>
-                        <span class="text-xs text-gray-500">
-                            ${s.port ? 'Port ' + s.port : ''}${s.pid ? ' PID ' + s.pid : ''}
-                        </span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-gray-500">${s.port ? ':' + s.port : ''}${s.pid ? ' · ' + s.pid : ''}</span>
+                            <label class="relative inline-flex items-center cursor-pointer" title="${s.enabled ? 'Disable service' : 'Enable service'}">
+                                <input type="checkbox" class="sr-only peer" ${s.enabled ? 'checked' : ''} onchange="toggleServiceEnabled('${s.name}', this.checked)">
+                                <div class="w-8 h-4 bg-dark-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-gray-400 peer-checked:after:bg-accent after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-accent/20"></div>
+                            </label>
+                        </div>
                     </div>
                     <div class="flex-1">
                         ${hasMetrics ? renderServiceMetrics(s.name, m) : ''}
@@ -971,6 +969,20 @@
             setTimeout(fetchStatus, 500);
         }
 
+        async function toggleServiceEnabled(name, enabled) {
+            const res = await fetch('/api/settings');
+            const settings = await res.json();
+            settings.services = settings.services || {};
+            settings.services[name] = { ...(settings.services[name] || {}), enabled };
+            await fetch('/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            showToast(`${name} ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            setTimeout(fetchStatus, 300);
+        }
+
         async function revealModel(path) {
             await fetch('/api/model/reveal?path=' + encodeURIComponent(path), { method: 'POST' });
         }
@@ -1052,13 +1064,8 @@
         let currentSettings = {};
         
         function toggleSettings() {
-            const panel = document.getElementById('settings-panel');
-            if (panel.classList.contains('hidden')) {
-                loadSettings();
-                panel.classList.remove('hidden');
-            } else {
-                panel.classList.add('hidden');
-            }
+            switchSection('settings');
+            loadSettings();
         }
         
         async function loadSettings() {
@@ -1081,35 +1088,15 @@
             modelSelect.innerHTML = '<option value="">(Auto-select first available)</option>' + 
                 models.map(m => `<option value="${m.id}" ${m.id === defaultModel ? 'selected' : ''}>${m.name} (${m.backend})</option>`).join('');
             
-            const servicesContainer = document.getElementById('settings-services');
-            const services = currentSettings.services || {};
-            servicesContainer.innerHTML = Object.entries(services).map(([name, config]) => `
-                <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" id="svc-${name}" ${config.enabled ? 'checked' : ''} 
-                           class="w-4 h-4 rounded bg-dark-700 border-dark-600 text-accent focus:ring-accent">
-                    <span class="text-sm text-gray-300">${name}</span>
-                    ${config.port ? `<span class="text-xs text-gray-500">:${config.port}</span>` : ''}
-                </label>
-            `).join('');
+
         }
         
         async function saveSettings() {
             const modelsDir = document.getElementById('settings-models-dir').value;
             const embeddingModel = document.getElementById('settings-embedding-model').value;
-            const services = {};
-            
-            Object.keys(currentSettings.services || {}).forEach(name => {
-                const checkbox = document.getElementById(`svc-${name}`);
-                services[name] = {
-                    ...currentSettings.services[name],
-                    enabled: checkbox ? checkbox.checked : true
-                };
-            });
-            
             const newSettings = {
                 ...currentSettings,
                 models_dir: modelsDir,
-                services: services,
                 embedding: {
                     ...currentSettings.embedding,
                     default_model: embeddingModel
@@ -1130,7 +1117,6 @@
             
             if (data.success) {
                 showToast('Settings saved', 'success');
-                toggleSettings();
             } else {
                 showToast('Failed to save: ' + data.message, 'error');
             }
