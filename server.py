@@ -1558,18 +1558,22 @@ class SearchRequest(BaseModel):
 @app.post("/api/search/huggingface")
 async def search_huggingface(req: SearchRequest):
     """Search HuggingFace for models"""
+    from huggingface_hub import HfApi
+
+    # Apply proxy if configured via environment variables (huggingface_hub uses httpx/requests internally)
+    settings = load_settings()
+    proxy_cfg = settings.get("proxy", {})
+    old_http_proxy = os.environ.get("HTTP_PROXY")
+    old_https_proxy = os.environ.get("HTTPS_PROXY")
+    if proxy_cfg.get("enabled"):
+        proxy_url = (
+            f"http://{proxy_cfg.get('host', '127.0.0.1')}:{proxy_cfg.get('port', 7890)}"
+        )
+        os.environ["HTTP_PROXY"] = proxy_url
+        os.environ["HTTPS_PROXY"] = proxy_url
+
     try:
-        from huggingface_hub import HfApi
-
-        # Apply proxy if configured
-        settings = load_settings()
-        proxy_cfg = settings.get("proxy", {})
-        proxies = None
-        if proxy_cfg.get("enabled"):
-            proxy_url = f"http://{proxy_cfg.get('host', '127.0.0.1')}:{proxy_cfg.get('port', 7890)}"
-            proxies = {"https": proxy_url, "http": proxy_url}
-
-        api = HfApi(proxies=proxies)
+        api = HfApi()
 
         query = req.query
 
@@ -1601,6 +1605,16 @@ async def search_huggingface(req: SearchRequest):
         return {"models": models}
     except Exception as e:
         return {"models": [], "error": str(e)}
+    finally:
+        # Restore proxy env vars to their original state
+        if old_http_proxy is None:
+            os.environ.pop("HTTP_PROXY", None)
+        else:
+            os.environ["HTTP_PROXY"] = old_http_proxy
+        if old_https_proxy is None:
+            os.environ.pop("HTTPS_PROXY", None)
+        else:
+            os.environ["HTTPS_PROXY"] = old_https_proxy
 
 
 # ============================================================================
