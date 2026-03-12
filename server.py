@@ -73,19 +73,19 @@ def get_opencode_profiles():
     profiles = [
         {
             "id": "relay",
-            "file": "oh-my-opencode-relay-up.json",
-            "name": "Claude Opus via Relay",
+            "file": "oh-my-opencode-relay.json",
+            "name": "Claude Opus 4.6 (Relay)",
         },
         {
-            "id": "sonnet",
-            "file": "oh-my-opencode-sonnet.json",
-            "name": "Claude Sonnet via Relay 2",
+            "id": "relay2",
+            "file": "oh-my-opencode-relay2.json",
+            "name": "Claude Sonnet 4.6 (Relay 2)",
         },
-        {"id": "qwen", "file": "oh-my-opencode-qwen.json", "name": "Qwen Fallback"},
+        {"id": "qwen", "file": "oh-my-opencode-qwen.json", "name": "Qwen3-Max + GLM-5"},
         {
             "id": "gemini",
             "file": "oh-my-opencode-gemini.json",
-            "name": "Gemini AI Studio",
+            "name": "Gemini 3.1 Pro",
         },
     ]
 
@@ -132,8 +132,8 @@ def switch_opencode_profile(profile_id: str):
     active_config = config_dir / "oh-my-opencode.json"
 
     profiles = {
-        "relay": "oh-my-opencode-relay-up.json",
-        "sonnet": "oh-my-opencode-sonnet.json",
+        "relay": "oh-my-opencode-relay.json",
+        "relay2": "oh-my-opencode-relay2.json",
         "qwen": "oh-my-opencode-qwen.json",
         "gemini": "oh-my-opencode-gemini.json",
     }
