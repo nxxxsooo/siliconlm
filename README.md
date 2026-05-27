@@ -2,7 +2,7 @@
 
 [中文文档](README_CN.md) | [Website](https://mjshao.fun/siliconlm/)
 
-Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings, and downloads.
+Local LLM dashboard and status layer for Apple Silicon Macs. SiliconLM shows machine status, Ollama read-only status, OpenCode profile/lifecycle visibility, HuggingFace downloads, and local tool/update visibility from one FastAPI dashboard.
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M%20series-black?logo=apple)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
@@ -10,88 +10,70 @@ Local LLM dashboard for Apple Silicon Macs. Manage models, services, embeddings,
 
 ## Features
 
-- **Machine Info** - Chip, GPU cores, Neural Engine, RAM, disk at a glance
-- **MLX Embeddings Server** - OpenAI-compatible `/v1/embeddings` API on port 8766
-- **Multi-Backend Support** - MLX, mlx-lm (decoder models), sentence-transformers
-- **Service Management** - Start/stop LMStudio, MLX Embeddings, OpenCode
-- **Smart Proxy** - Routes `/v1/embeddings` to MLX, `/v1/chat` to LMStudio
-- **Model Downloads** - HuggingFace search + parallel downloads for large models
-- **Settings Panel** - Configure models directory, default embedding model
+- **Machine Info** - Chip, GPU cores, Neural Engine, RAM, and disk at a glance
+- **Ollama Status** - Read-only reachability and model-tag visibility from the local Ollama API
+- **OpenCode Control** - Track and manage the local OpenCode server lifecycle
+- **Model Downloads** - HuggingFace search plus queued downloads into the configured models directory
+- **Update Visibility** - Dashboard checks aligned with the local `/update` workflow for OpenCode, oh-my-openagent, Ollama reachability, sub2api, uv tools, and global npm packages
 
 ## Architecture
 
-```
-CherryStudio / OpenCode / Client
+```text
+Browser / local operator
         │
         ▼
-http://localhost:1234/v1/*  (SiliconLM Proxy)
+http://localhost:1234  (SiliconLM dashboard)
         │
-   ┌────┴────┐
-   ▼         ▼
-/v1/embeddings   /v1/chat/*
-   │              │
-   ▼              ▼
-:8766 (MLX)    :11234 (LMStudio)
-   │
-   ├─► MLX (bert, roberta)
-   ├─► mlx-lm (Qwen3, gte-Qwen2)
-   └─► sentence-transformers (bge-m3)
+        ▼
+Read-only local status APIs, including Ollama on :11434 when available
 ```
 
-## Supported Embedding Models
+SiliconLM is now dashboard-only:
 
-| Model | Backend | Dimensions | Speed |
-|-------|---------|------------|-------|
-| mixedbread-ai/mxbai-embed-large-v1 | MLX | 1024 | Fast |
-| BAAI/bge-m3 | sentence-transformers | 1024 | Medium |
-| mlx-community/Qwen3-Embedding-0.6B-4bit | mlx-lm | 1024 | Fast |
-| mlx-community/Qwen3-Embedding-8B-4bit | mlx-lm | 4096 | Medium |
-| mlx-community/gte-Qwen2-7B-instruct-4bit | mlx-lm | 3584 | Medium |
+- Local LLM backends are read-only status sources, not managed runtimes.
+- SiliconLM does not start, stop, restart, watch, or proxy Ollama or any other inference backend.
+- `/v1/*` no longer proxies inference traffic; use the runtime backend directly for chat/completions.
+- Ollama status is optional and read through `http://127.0.0.1:11434/api/tags` when available.
+
+## Current Local Models
+
+The dashboard defaults to `/Users/mingjian/Models` for local model inventory. Ollama model tags are shown only when Ollama is already running locally; SiliconLM never pulls or creates tags.
 
 ## Quick Start
 
 ```bash
 cd ~/Documents/sync/GitHub/siliconlm
 
-# Setup
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-
-# Or manual install
-.venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
-    mlx mlx-embeddings mlx-lm sentence-transformers
-
-# Run dashboard (port 1234)
 .venv/bin/python server.py
 
-# Run embedding server (port 8766)
-.venv/bin/python embedding_server.py
-
-# Open dashboard
 open http://localhost:1234
 ```
 
-## 🤖 Let AI Set It Up
+## AI Agent Setup Prompt
 
-Copy-paste this into your AI assistant (Claude Code, OpenCode, etc.) and it'll handle the rest:
+Copy-paste this into your AI assistant:
 
-```
+```text
 Install and set up SiliconLM on my Mac.
 
 Repository: https://github.com/nxxxsooo/siliconlm
 
 Steps:
-1. Clone the repo (ask me where to put it)
-2. Create a Python venv and install requirements.txt
-3. Start the dashboard (server.py on port 1234) and embedding server (embedding_server.py on port 8766)
-4. Add shell aliases to my ~/.zshrc for easy startup
+1. Clone the repo to ~/Documents/sync/GitHub/siliconlm, or ask me where to put it.
+2. Create a Python venv and install requirements.txt.
+3. Start the dashboard with server.py on port 1234.
+4. Confirm the dashboard starts, OpenCode is visible, and Ollama status appears if Ollama is already running.
+5. Add shell aliases to my ~/.zshrc for easy startup.
 
 Requirements:
 - macOS 14.0+ with Apple Silicon (M series)
 - Python 3.10+
+- No local LLM runtime is required for the dashboard to boot
 - No API keys or secrets needed
 
-After setup, open http://localhost:1234 to verify the dashboard is running.
+After setup, open http://localhost:1234 and verify /api/status reports dashboard status.
 ```
 
 ## Shell Alias
@@ -99,71 +81,37 @@ After setup, open http://localhost:1234 to verify the dashboard is running.
 Add to `~/.zshrc`:
 
 ```bash
-# Start SiliconLM dashboard + embedding server
-alias slm='cd ~/Documents/sync/GitHub/siliconlm && \
-    nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & \
-    nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&1 & \
-    sleep 2 && open http://localhost:1234'
+alias slm='cd ~/Documents/sync/GitHub/siliconlm && nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & sleep 2 && open http://localhost:1234'
 ```
 
 ## API Endpoints
 
-### Dashboard (port 1234)
-
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+|---|---|---|
 | `/api/status` | GET | System info, services, models |
 | `/api/settings` | GET/PUT | Dashboard settings |
 | `/api/downloads` | GET | Active downloads, queue, presets |
 | `/api/download/start` | POST | Start model download |
 | `/api/search/huggingface` | POST | Search HuggingFace models |
-| `/v1/embeddings` | POST | Proxy to MLX Embeddings |
-| `/v1/chat/completions` | POST | Proxy to LMStudio |
+| `/api/opencode/profiles` | GET | List available OpenCode profiles |
+| `/api/opencode/profiles/{profile_id}` | POST | Switch active OpenCode profile |
+| `/api/update/run` | POST | Spawn the local update workflow |
+| `/v1/models` | GET | Dashboard-mode empty model list |
+| `/v1/{path}` | any | Returns 404 because SiliconLM does not proxy inference |
 
-### MLX Embeddings (port 8766)
+## Chat API Usage
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/embeddings` | POST | Generate embeddings (OpenAI-compatible) |
-| `/v1/models` | GET | List available embedding models |
-| `/api/metrics` | GET | Request stats, latency, activity |
-| `/health` | GET | Health check |
-
-## Embedding API Usage
-
-```bash
-# Generate embeddings
-curl -X POST http://localhost:8766/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "mixedbread-ai/mxbai-embed-large-v1",
-    "input": "Hello, world!"
-  }'
-
-# Batch embeddings
-curl -X POST http://localhost:8766/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ",
-    "input": ["text 1", "text 2", "text 3"]
-  }'
-```
-
-## Concurrent Request Handling
-
-- **GPU models** (MLX, mlx-lm): Serialized to prevent Metal crashes
-- **CPU models** (sentence-transformers): Can run parallel with GPU
-- **Mixed workloads**: GPU and CPU requests run concurrently
+SiliconLM no longer provides chat proxying. Send inference requests directly to your chosen runtime backend, such as Ollama, instead of routing them through the dashboard.
 
 ## Tech Stack
 
 | Component | Technology |
-|-----------|------------|
+|---|---|
 | Backend | FastAPI + uvicorn |
-| Frontend | TailwindCSS + Vanilla JS |
-| Embeddings | MLX + mlx-lm + sentence-transformers |
+| Frontend | TailwindCSS + vanilla JS |
+| Local status | Ollama tags API, OpenCode status |
 | Downloads | huggingface_hub |
-| Proxy | httpx async |
+| HTTP client | httpx async |
 
 ## License
 

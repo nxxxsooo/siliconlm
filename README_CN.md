@@ -2,7 +2,7 @@
 
 [English](README.md) | [网站](https://mjshao.fun/siliconlm/)
 
-Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量和下载。
+Apple Silicon Mac 本地 LLM 运维面板。SiliconLM 现在专注展示机器状态、Ollama 只读状态、OpenCode 配置/服务可见性、HuggingFace 模型下载，以及本地工具更新状态。
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M%20series-black?logo=apple)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
@@ -10,65 +10,70 @@ Apple Silicon Mac 本地 LLM 管理面板。管理模型、服务、嵌入向量
 
 ## 功能特性
 
-- **系统信息** - 芯片、GPU核心、神经引擎、内存、磁盘一览
-- **MLX 嵌入服务** - OpenAI 兼容的 `/v1/embeddings` API（端口 8766）
-- **多后端支持** - MLX、mlx-lm（解码器模型）、sentence-transformers
-- **服务管理** - 启动/停止 LMStudio、MLX Embeddings、OpenCode
-- **智能代理** - `/v1/embeddings` 路由到 MLX，`/v1/chat` 路由到 LMStudio
-- **模型下载** - HuggingFace 搜索 + 并行下载大模型
-- **设置面板** - 配置模型目录、默认嵌入模型
+- **系统信息** - 芯片、GPU 核心、神经引擎、内存、磁盘一览
+- **Ollama 状态** - 只读查看本地 Ollama API 可达性和模型 tag
+- **OpenCode 控制** - 查看并管理本地 OpenCode server 生命周期
+- **模型下载** - HuggingFace 搜索 + 队列下载到配置的模型目录
+- **更新状态** - 对齐本地 `/update` 工作流，检查 OpenCode、oh-my-openagent、Ollama 可达性、sub2api、uv tools、全局 npm 包
 
 ## 架构
 
-```
-CherryStudio / OpenCode / 客户端
+```text
+浏览器 / 本机操作者
         │
         ▼
-http://localhost:1234/v1/*  (SiliconLM 代理)
+http://localhost:1234  (SiliconLM 面板)
         │
-   ┌────┴────┐
-   ▼         ▼
-/v1/embeddings   /v1/chat/*
-   │              │
-   ▼              ▼
-:8766 (MLX)    :11234 (LMStudio)
-   │
-   ├─► MLX (bert, roberta)
-   ├─► mlx-lm (Qwen3, gte-Qwen2)
-   └─► sentence-transformers (bge-m3)
+        ▼
+只读本地状态 API，包括可选的 Ollama :11434
 ```
 
-## 支持的嵌入模型
+SiliconLM 现在是纯面板模式：
 
-| 模型 | 后端 | 维度 | 速度 |
-|------|------|------|------|
-| mixedbread-ai/mxbai-embed-large-v1 | MLX | 1024 | 快 |
-| BAAI/bge-m3 | sentence-transformers | 1024 | 中 |
-| mlx-community/Qwen3-Embedding-0.6B-4bit | mlx-lm | 1024 | 快 |
-| mlx-community/Qwen3-Embedding-8B-4bit | mlx-lm | 4096 | 中 |
-| mlx-community/gte-Qwen2-7B-instruct-4bit | mlx-lm | 3584 | 中 |
+- 本地 LLM 后端只是只读状态来源，不再由 SiliconLM 管理生命周期。
+- SiliconLM 不启动、停止、重启、watch 或代理 Ollama / 其他推理后端。
+- `/v1/*` 不再代理推理流量；聊天补全请直接访问实际运行时后端。
+- Ollama 状态是可选信息，仅在本机 `http://127.0.0.1:11434/api/tags` 可达时展示。
+
+## 当前本地模型
+
+面板默认模型目录是 `/Users/mingjian/Models`，用于本地模型盘点。Ollama 模型 tag 只在 Ollama 已经本地运行时展示；SiliconLM 不拉取、不创建任何 tag。
 
 ## 快速开始
 
 ```bash
 cd ~/Documents/sync/GitHub/siliconlm
 
-# 安装
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-
-# 或手动安装
-.venv/bin/pip install fastapi uvicorn psutil huggingface_hub pydantic httpx \
-    mlx mlx-embeddings mlx-lm sentence-transformers
-
-# 启动面板（端口 1234）
 .venv/bin/python server.py
 
-# 启动嵌入服务（端口 8766）
-.venv/bin/python embedding_server.py
-
-# 打开面板
 open http://localhost:1234
+```
+
+## 让 AI 帮你安装
+
+复制下面这段给 AI 助手：
+
+```text
+Install and set up SiliconLM on my Mac.
+
+Repository: https://github.com/nxxxsooo/siliconlm
+
+Steps:
+1. Clone the repo to ~/Documents/sync/GitHub/siliconlm, or ask me where to put it.
+2. Create a Python venv and install requirements.txt.
+3. Start the dashboard with server.py on port 1234.
+4. Confirm the dashboard starts, OpenCode is visible, and Ollama status appears if Ollama is already running.
+5. Add shell aliases to my ~/.zshrc for easy startup.
+
+Requirements:
+- macOS 14.0+ with Apple Silicon (M series)
+- Python 3.10+
+- No local LLM runtime is required for the dashboard to boot
+- No API keys or secrets needed
+
+After setup, open http://localhost:1234 and verify /api/status reports dashboard status.
 ```
 
 ## Shell 别名
@@ -76,71 +81,37 @@ open http://localhost:1234
 添加到 `~/.zshrc`：
 
 ```bash
-# 启动 SiliconLM 面板 + 嵌入服务
-alias slm='cd ~/Documents/sync/GitHub/siliconlm && \
-    nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & \
-    nohup .venv/bin/python embedding_server.py > /tmp/mlx_embeddings.log 2>&1 & \
-    sleep 2 && open http://localhost:1234'
+alias slm='cd ~/Documents/sync/GitHub/siliconlm && nohup .venv/bin/python server.py > /tmp/siliconlm.log 2>&1 & sleep 2 && open http://localhost:1234'
 ```
 
 ## API 接口
 
-### 面板服务（端口 1234）
-
 | 接口 | 方法 | 描述 |
-|------|------|------|
+|---|---|---|
 | `/api/status` | GET | 系统信息、服务、模型 |
 | `/api/settings` | GET/PUT | 面板设置 |
 | `/api/downloads` | GET | 下载进度、队列、预设 |
 | `/api/download/start` | POST | 开始下载模型 |
 | `/api/search/huggingface` | POST | 搜索 HuggingFace 模型 |
-| `/v1/embeddings` | POST | 代理到 MLX Embeddings |
-| `/v1/chat/completions` | POST | 代理到 LMStudio |
+| `/api/opencode/profiles` | GET | 列出 OpenCode profiles |
+| `/api/opencode/profiles/{profile_id}` | POST | 切换当前 OpenCode profile |
+| `/api/update/run` | POST | 启动本地 update 工作流 |
+| `/v1/models` | GET | 纯面板模式下返回空模型列表 |
+| `/v1/{path}` | any | 返回 404；SiliconLM 不代理推理 |
 
-### MLX 嵌入服务（端口 8766）
+## Chat API 示例
 
-| 接口 | 方法 | 描述 |
-|------|------|------|
-| `/v1/embeddings` | POST | 生成嵌入向量（OpenAI 兼容） |
-| `/v1/models` | GET | 列出可用嵌入模型 |
-| `/api/metrics` | GET | 请求统计、延迟、活动 |
-| `/health` | GET | 健康检查 |
-
-## 嵌入 API 使用示例
-
-```bash
-# 生成嵌入向量
-curl -X POST http://localhost:8766/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "mixedbread-ai/mxbai-embed-large-v1",
-    "input": "你好，世界！"
-  }'
-
-# 批量嵌入
-curl -X POST http://localhost:8766/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ",
-    "input": ["文本1", "文本2", "文本3"]
-  }'
-```
-
-## 并发请求处理
-
-- **GPU 模型**（MLX、mlx-lm）：串行执行，防止 Metal 崩溃
-- **CPU 模型**（sentence-transformers）：可与 GPU 并行运行
-- **混合负载**：GPU 和 CPU 请求可同时执行
+SiliconLM 不再提供聊天代理。推理请求请直接发送给实际运行时后端，例如 Ollama，而不是经过 dashboard。
 
 ## 技术栈
 
 | 组件 | 技术 |
-|------|------|
+|---|---|
 | 后端 | FastAPI + uvicorn |
 | 前端 | TailwindCSS + 原生 JS |
-| 嵌入 | MLX + mlx-lm + sentence-transformers |
+| 本地状态 | Ollama tags API、OpenCode 状态 |
 | 下载 | huggingface_hub |
-| 代理 | httpx async |
+| HTTP 客户端 | httpx async |
 
 ## 许可证
 

@@ -1,21 +1,19 @@
 {
-  "models_dir": "~/.lmstudio/models",
+  "chat_backend": "none",
+  "models_dir": "~/Models",
   "services": {
-    "mlx_embeddings": {
+    "ollama": {
       "enabled": true,
-      "port": 8766
-    },
-    "lmstudio": {
-      "enabled": true,
-      "port": 11234
+      "port": 11434,
+      "readonly": true
     },
     "opencode": {
       "enabled": true
     }
   },
-  "embedding": {
-    "max_batch_size": 32,
-    "max_input_chars": 8192,
-    "default_model": ""
+  "proxy": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 7890
   }
 }

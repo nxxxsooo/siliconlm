@@ -9,34 +9,31 @@ import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 import asyncio
 import httpx
 import psutil
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from download_manager import download_manager, PRESET_MODELS
+from download_manager import download_manager
 
 
 @asynccontextmanager
 async def lifespan(app):
-    # Startup
     download_manager.start()
-    # Auto-start services that were running before last shutdown
     asyncio.create_task(_autostart_services())
     yield
-    # Shutdown
     download_manager.stop()
 
 
 async def _autostart_services():
-    """Auto-start services that were explicitly started before last shutdown."""
-    await asyncio.sleep(1)  # Brief delay to let FastAPI finish initializing
+    """Auto-start dashboard-managed services that were explicitly started before last shutdown."""
+    await asyncio.sleep(1)
     started = _load_started_services()
-    for name in ("mlx_embeddings", "lmstudio"):
+    for name in ("opencode",):
         if name in started:
             try:
                 await start_service(name)
@@ -47,45 +44,90 @@ async def _autostart_services():
 app = FastAPI(title="SiliconLM", lifespan=lifespan)
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
-DEFAULT_SETTINGS = {
-    "models_dir": "~/.lmstudio/models",
-    "services": {
-        "mlx_embeddings": {"enabled": True, "port": 8766},
-        "lmstudio": {"enabled": True, "port": 11234},
-        "opencode": {"enabled": True},
-    },
-    "embedding": {"max_batch_size": 32, "max_input_chars": 8192},
-    "proxy": {"enabled": False, "host": "127.0.0.1", "port": 7890},
+DEFAULT_SERVICES: dict[str, dict[str, Any]] = {
+    "ollama": {"enabled": True, "port": 11434, "readonly": True},
+    "opencode": {"enabled": True},
+}
+DEFAULT_PROXY: dict[str, Any] = {"enabled": False, "host": "127.0.0.1", "port": 7890}
+DEFAULT_SETTINGS: dict[str, Any] = {
+    "chat_backend": "none",
+    "models_dir": "~/Models",
+    "services": DEFAULT_SERVICES,
+    "proxy": DEFAULT_PROXY,
 }
 
 
-def load_settings():
+def load_settings() -> dict[str, Any]:
+    settings: dict[str, Any] = {
+        "chat_backend": DEFAULT_SETTINGS["chat_backend"],
+        "models_dir": DEFAULT_SETTINGS["models_dir"],
+        "services": {name: cfg.copy() for name, cfg in DEFAULT_SERVICES.items()},
+        "proxy": DEFAULT_PROXY.copy(),
+    }
+
     if SETTINGS_FILE.exists():
         with open(SETTINGS_FILE) as f:
-            return json.load(f)
-    return DEFAULT_SETTINGS.copy()
+            loaded = json.load(f)
+        settings.update({k: v for k, v in loaded.items() if k not in {"services", "embedding"}})
+        settings["chat_backend"] = loaded.get("chat_backend", settings["chat_backend"])
+        settings["models_dir"] = loaded.get("models_dir", settings["models_dir"])
+        loaded_services = loaded.get("services", {})
+        settings["services"] = {
+            "ollama": {
+                **DEFAULT_SERVICES["ollama"],
+                **loaded_services.get("ollama", {}),
+            },
+            "opencode": {
+                **DEFAULT_SERVICES["opencode"],
+                **loaded_services.get("opencode", {}),
+            },
+        }
+        settings["proxy"] = {**DEFAULT_PROXY, **loaded.get("proxy", {})}
+    return settings
+
+
+def _resolve_opencode_agents(data: dict) -> dict:
+    agents = data.get("agents", {})
+    categories = data.get("categories", {})
+    resolved = {}
+
+    for name, agent in agents.items():
+        if not isinstance(agent, dict):
+            resolved[name] = agent
+            continue
+
+        agent_data = dict(agent)
+        category_name = agent_data.get("category")
+        category = categories.get(category_name) if category_name else None
+
+        if isinstance(category, dict):
+            agent_data.setdefault("model", category.get("model"))
+            agent_data.setdefault("variant", category.get("variant"))
+
+        resolved[name] = agent_data
+
+    return resolved
 
 
 def get_opencode_profiles():
     config_dir = Path.home() / ".config" / "opencode"
-    active_config = config_dir / "oh-my-opencode.json"
+    active_config = config_dir / "oh-my-openagent.json"
 
     profiles = [
         {
-            "id": "relay",
-            "file": "oh-my-opencode-relay.json",
-            "name": "Claude Opus 4.6 (Relay)",
+            "id": "opus",
+            "file": "oh-my-openagent-opus.json",
+            "name": "Opus · current mixed routing",
         },
         {
-            "id": "relay2",
-            "file": "oh-my-opencode-relay2.json",
-            "name": "Claude Sonnet 4.6 (Relay 2)",
+            "id": "gpt",
+            "file": "oh-my-openagent-gpt.json",
+            "name": "GPT · GPT-only",
         },
-        {"id": "qwen", "file": "oh-my-opencode-qwen.json", "name": "Qwen3-Max + GLM-5"},
         {
-            "id": "gemini",
-            "file": "oh-my-opencode-gemini.json",
-            "name": "Gemini 3.1 Pro",
+            "id": "qwen",
+            "file": "oh-my-openagent-qwen.json",
+            "name": "Qwen3-Max + GLM-5",
         },
     ]
 
@@ -112,7 +154,7 @@ def get_opencode_profiles():
         if p_file.exists():
             try:
                 data = json.loads(p_file.read_text())
-                agents = data.get("agents", {})
+                agents = _resolve_opencode_agents(data)
             except Exception:
                 pass
         results.append(
@@ -129,13 +171,17 @@ def get_opencode_profiles():
 
 def switch_opencode_profile(profile_id: str):
     config_dir = Path.home() / ".config" / "opencode"
-    active_config = config_dir / "oh-my-opencode.json"
+    active_config = config_dir / "oh-my-openagent.json"
 
     profiles = {
-        "relay": "oh-my-opencode-relay.json",
-        "relay2": "oh-my-opencode-relay2.json",
-        "qwen": "oh-my-opencode-qwen.json",
-        "gemini": "oh-my-opencode-gemini.json",
+        "opus": "oh-my-openagent-opus.json",
+        "gpt": "oh-my-openagent-gpt.json",
+        "qwen": "oh-my-openagent-qwen.json",
+        "sub2api": "oh-my-openagent-opus.json",
+        "relay": "oh-my-openagent-opus.json",
+        "me": "oh-my-openagent-opus.json",
+        "openai": "oh-my-openagent-gpt.json",
+        "oai": "oh-my-openagent-gpt.json",
     }
 
     if profile_id not in profiles:
@@ -193,46 +239,73 @@ def _save_started_services(started: set):
     _STARTED_SERVICES_FILE.write_text(json.dumps(list(started)))
 
 
+def _get_chat_backend() -> str:
+    """Return active chat backend name. SiliconLM is dashboard-only."""
+    return _settings.get("chat_backend", "none")
+
+
+def _get_chat_backend_port() -> Optional[int]:
+    """Dashboard mode has no managed chat backend port."""
+    return None
+
+
+def _get_proxy_targets():
+    """SiliconLM no longer proxies inference requests."""
+    return {}
+
+
 _settings = load_settings()
-PROXY_TARGETS = {
-    "embeddings": "http://localhost:8766",
-    "lmstudio": "http://localhost:11234",
-}
-
-EMBEDDING_MODELS = {"embed", "gte-", "bge-", "e5-", "mxbai-embed", "nomic-embed"}
-
-
-def _is_embedding_request(path: str, body: dict = None) -> bool:
-    if "/embeddings" in path:
-        return True
-    if body and body.get("model"):
-        model = body["model"].lower()
-        return any(p in model for p in EMBEDDING_MODELS)
-    return False
 
 
 async def _proxy_request(request: Request, target_url: str) -> Response:
-    async with httpx.AsyncClient(timeout=300.0, trust_env=False) as client:
-        url = f"{target_url}{request.url.path}"
-        if request.url.query:
-            url = f"{url}?{request.url.query}"
+    try:
+        async with httpx.AsyncClient(timeout=300.0, trust_env=False) as client:
+            url = f"{target_url}{request.url.path}"
+            if request.url.query:
+                url = f"{url}?{request.url.query}"
 
-        headers = dict(request.headers)
-        headers.pop("host", None)
+            headers = dict(request.headers)
+            headers.pop("host", None)
 
-        body = await request.body()
+            body = await request.body()
 
-        response = await client.request(
-            method=request.method,
-            url=url,
-            headers=headers,
-            content=body,
-        )
+            response = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                content=body,
+            )
 
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout):
         return Response(
-            content=response.content,
-            status_code=response.status_code,
-            headers=dict(response.headers),
+            content=json.dumps(
+                {
+                    "error": {
+                        "message": f"Backend unavailable at {target_url}",
+                        "type": "proxy_error",
+                    }
+                }
+            ),
+            status_code=502,
+            headers={"content-type": "application/json"},
+        )
+    except httpx.TimeoutException:
+        return Response(
+            content=json.dumps(
+                {
+                    "error": {
+                        "message": f"Backend timeout ({target_url})",
+                        "type": "proxy_error",
+                    }
+                }
+            ),
+            status_code=504,
+            headers={"content-type": "application/json"},
         )
 
 
@@ -242,14 +315,14 @@ _cache = {
 }
 CACHE_TTL = 30
 
-# LMStudio request tracking
-_lmstudio_stats = {
+# Chat request tracking
+_chat_stats = {
     "requests": 0,
     "tokens": 0,
     "start_time": time.time(),
 }
 
-# Combined API activity log (both embeddings and LMStudio)
+# Combined API activity log
 from collections import deque
 
 _activity_log = deque(maxlen=50)
@@ -263,7 +336,7 @@ if STATIC_DIR.exists():
 
 # Configuration
 def get_models_dir():
-    models_path = _settings.get("models_dir", "~/.lmstudio/models")
+    models_path = _settings.get("models_dir", "~/Models")
     return Path(models_path).expanduser()
 
 
@@ -272,22 +345,12 @@ DASHBOARD_DIR = Path(__file__).parent
 
 # Service definitions
 SERVICES = {
-    "mlx_embeddings": {
-        "display": "MLX Embeddings",
-        "port": 8766,
-        "check": "port",
-        "process": "embedding_server",
-        "start_cmd": [
-            os.path.expanduser("~/.local/share/siliconlm/venv/bin/python"),
-            str(DASHBOARD_DIR / "embedding_server.py"),
-        ],
-        "metrics_url": "http://localhost:8766/api/metrics",
-    },
-    "lmstudio": {
-        "display": "LMStudio (llmster)",
-        "port": 11234,
-        "check": "lmstudio",
-        "process": "llmster",
+    "ollama": {
+        "display": "Ollama",
+        "port": 11434,
+        "check": "ollama_api",
+        "readonly": True,
+        "note": "Read-only status from local Ollama API",
     },
     "opencode": {
         "display": "OpenCode",
@@ -325,21 +388,24 @@ def check_process(name: str) -> Optional[int]:
     return None
 
 
-def _lmstudio_status() -> dict:
-    """Check LMStudio status via process detection + HTTP API (no lms CLI)."""
-    pid = check_process("llmster")
-    if not pid:
-        return {"daemon_running": False, "running": False, "pid": None, "port": None}
-    # Daemon is running, check if HTTP server responds
+def _ollama_status(port: int = 11434) -> dict:
+    """Check Ollama status using the read-only tags API."""
     try:
         import urllib.request
 
         with urllib.request.urlopen(
-            "http://127.0.0.1:11234/v1/models", timeout=2
+            f"http://127.0.0.1:{port}/api/tags", timeout=2
         ) as resp:
-            return {"daemon_running": True, "running": True, "pid": pid, "port": 11234}
+            data = json.loads(resp.read().decode())
+        models = data.get("models", [])
+        return {
+            "running": True,
+            "port": port,
+            "models": models,
+            "metrics": {"models_available": len(models)},
+        }
     except Exception:
-        return {"daemon_running": True, "running": False, "pid": pid, "port": None}
+        return {"running": False, "port": port, "models": [], "metrics": {"models_available": 0}}
 
 
 def get_service_status(name: str) -> dict:
@@ -352,16 +418,20 @@ def get_service_status(name: str) -> dict:
         "running": False,
         "pid": None,
         "enabled": enabled,
-        "can_start": enabled,
+        "can_start": enabled and not service.get("readonly", False),
+        "readonly": service.get("readonly", False),
         "note": service.get("note") if enabled else "Disabled in settings",
     }
 
-    if service.get("check") == "lmstudio":
-        lms = _lmstudio_status()
-        status["pid"] = lms["pid"]
-        status["running"] = lms["running"]
-        status["port"] = lms["port"] or service.get("port")  # fallback to static port
-        status["daemon_running"] = lms["daemon_running"]
+    if service.get("check") == "ollama_api":
+        port = service_settings.get("port", service.get("port", 11434))
+        ollama = _ollama_status(port)
+        status["running"] = ollama["running"]
+        status["port"] = ollama["port"]
+        status["metrics"] = ollama["metrics"]
+        status["models"] = ollama["models"]
+        if status["running"]:
+            status["note"] = "Ollama API reachable"
     elif service.get("check") == "port":
         port = service.get("port")
         status["running"] = check_port(port)
@@ -382,28 +452,6 @@ def get_service_status(name: str) -> dict:
                     status["metrics"] = json.loads(resp.read().decode())
             except Exception:
                 pass
-
-        if name == "lmstudio":
-            # Get loaded models via HTTP API instead of broken lms CLI
-            models = []
-            try:
-                import urllib.request
-
-                with urllib.request.urlopen(
-                    "http://127.0.0.1:11234/v1/models", timeout=2
-                ) as resp:
-                    data = json.loads(resp.read().decode())
-                    models = data.get("data", [])
-            except Exception:
-                pass
-            status["metrics"] = {
-                "models_loaded": len(models),
-                "loaded_models": [
-                    {"id": m.get("id", ""), "type": "llm"} for m in models[:8]
-                ],
-                "total_requests": _lmstudio_stats["requests"],
-                "total_tokens": _lmstudio_stats["tokens"],
-            }
 
         if name == "opencode" and status["pid"]:
             try:
@@ -650,59 +698,7 @@ async def _check_opencode() -> dict:
         }
 
 
-async def _check_lmstudio_cli() -> dict:
-    """Check LMStudio CLI (lms) status."""
-    name = "lmstudio-cli"
-    category = "lmstudio"
-    install_cmd = "Download from https://lmstudio.ai"
-    update_cmd = "Update via LMStudio app"
-    lms_path = Path.home() / ".lmstudio" / "bin" / "lms"
-    if not lms_path.exists():
-        return {
-            "name": name,
-            "category": category,
-            "installed": False,
-            "version": None,
-            "latest": None,
-            "status": "missing",
-            "install_cmd": install_cmd,
-            "update_cmd": update_cmd,
-        }
-    try:
-        version_result = await asyncio.to_thread(
-            subprocess.run,
-            [str(lms_path), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        version = (
-            version_result.stdout.strip() if version_result.returncode == 0 else None
-        )
-        return {
-            "name": name,
-            "category": category,
-            "installed": True,
-            "version": version,
-            "latest": None,
-            "status": "current",
-            "install_cmd": install_cmd,
-            "update_cmd": update_cmd,
-        }
-    except Exception:
-        return {
-            "name": name,
-            "category": category,
-            "installed": True,
-            "version": None,
-            "latest": None,
-            "status": "unknown",
-            "install_cmd": install_cmd,
-            "update_cmd": update_cmd,
-        }
-
-
-async def _check_mlx_tools() -> list[dict]:
+async def _check_uv_tools() -> list[dict]:
     """Check MLX tools (mlx, mlx-lm, mlx-embeddings) in external venv."""
     tools = [
         {"name": "mlx", "package": "mlx"},
@@ -848,6 +844,177 @@ async def _check_brew_packages() -> list[dict]:
     return results
 
 
+
+
+def _version_status(version: Optional[str], latest: Optional[str]) -> str:
+    if not version:
+        return "missing"
+    if not latest:
+        return "current"
+    try:
+        from packaging.version import Version
+        return "outdated" if Version(version) < Version(latest) else "current"
+    except Exception:
+        return "outdated" if version != latest else "current"
+
+
+def _tool_result(name: str, category: str, version=None, latest=None, status=None, update_cmd=None, install_cmd=None, notes=None, updatable=True):
+    return {
+        "name": name,
+        "id": name,
+        "category": category,
+        "installed": bool(version),
+        "version": version,
+        "latest": latest,
+        "status": status or _version_status(version, latest),
+        "update_cmd": update_cmd,
+        "install_cmd": install_cmd,
+        "notes": notes,
+        "updatable": updatable and bool(update_cmd),
+    }
+
+
+async def _run_capture(cmd: list[str], timeout: int = 20, cwd: Optional[str] = None) -> tuple[int, str, str]:
+    result = await asyncio.to_thread(
+        subprocess.run,
+        cmd,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+async def _fetch_latest_npm_version(package: str) -> Optional[str]:
+    try:
+        code, stdout, _ = await _run_capture(["/opt/homebrew/bin/npm", "view", package, "version"], timeout=20)
+        return stdout.splitlines()[-1].strip() if code == 0 and stdout else None
+    except Exception:
+        return None
+
+
+async def _check_opencode() -> dict:
+    opencode_bin = Path.home() / ".opencode" / "bin" / "opencode"
+    version = None
+    if opencode_bin.exists():
+        try:
+            code, stdout, _ = await _run_capture([str(opencode_bin), "--version"], timeout=10)
+            if code == 0 and stdout:
+                version = stdout.split()[-1]
+        except Exception:
+            pass
+    latest = await _fetch_latest_github_release("sst/opencode")
+    return _tool_result(
+        "opencode",
+        "opencode",
+        version,
+        latest,
+        update_cmd=f"{opencode_bin} upgrade",
+        install_cmd="curl -fsSL https://opencode.ai/install | bash",
+    )
+
+
+def _read_package_version(path: Path) -> Optional[str]:
+    try:
+        return json.loads(path.read_text()).get("version")
+    except Exception:
+        return None
+
+
+async def _check_oh_my_openagent() -> dict:
+    cache_version = _read_package_version(Path.home() / ".cache" / "opencode" / "packages" / "oh-my-openagent@latest" / "node_modules" / "oh-my-openagent" / "package.json")
+    lock_version = _read_package_version(Path.home() / ".local" / "share" / "opencode" / "node_modules" / "oh-my-openagent" / "package.json")
+    latest = await _fetch_latest_npm_version("oh-my-openagent")
+    cache_drift = bool(cache_version and lock_version and cache_version != lock_version)
+    status = "cache-drift" if cache_drift else _version_status(lock_version or cache_version, latest)
+    notes = f"loaded={cache_version or 'unknown'} lockfile={lock_version or 'unknown'}"
+    return _tool_result(
+        "oh-my-openagent",
+        "opencode-plugin",
+        lock_version or cache_version,
+        latest,
+        status=status,
+        update_cmd="cd ~/.local/share/opencode && bun update oh-my-openagent && rm -rf ~/.cache/opencode/packages/oh-my-openagent@latest && ~/.bin/oc-restart",
+        notes=notes,
+    )
+
+
+async def _check_ollama() -> dict:
+    port = _settings.get("services", {}).get("ollama", {}).get("port", 11434)
+    status = _ollama_status(port)
+    notes = f"127.0.0.1:{port}"
+    if status["running"]:
+        notes = f"{notes} ({status['metrics']['models_available']} tags)"
+    return _tool_result(
+        "ollama",
+        "backend",
+        "reachable" if status["running"] else None,
+        None,
+        status="current" if status["running"] else "missing",
+        update_cmd=None,
+        install_cmd="brew install ollama",
+        notes=notes,
+        updatable=False,
+    )
+
+
+async def _check_sub2api() -> dict:
+    provider_url = "http://123.57.81.93:8081/v1"
+    try:
+        config = json.loads((Path.home() / ".config" / "opencode" / "opencode.json").read_text())
+        provider = config.get("provider", {}).get("sub2api", {})
+        provider_url = provider.get("options", {}).get("baseURL") or provider.get("baseURL") or provider_url
+    except Exception:
+        pass
+    health_url = provider_url.rsplit("/v1", 1)[0]
+    status = "unknown"
+    notes = provider_url
+    try:
+        async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
+            response = await client.get(health_url)
+            status = "current" if response.status_code < 500 else "unknown"
+            notes = f"{provider_url} ({response.status_code})"
+    except Exception as e:
+        notes = f"{provider_url} ({e})"
+    return _tool_result("sub2api", "proxy", "reachable" if status == "current" else None, None, status=status, update_cmd=None, notes=notes, updatable=False)
+
+
+async def _check_uv_tools() -> list[dict]:
+    tools = []
+    try:
+        code, stdout, _ = await _run_capture(["/opt/homebrew/bin/uv", "tool", "list"], timeout=30)
+        if code != 0:
+            return []
+        for line in stdout.splitlines():
+            if " v" not in line or line.startswith("-"):
+                continue
+            name, version = line.split(" v", 1)
+            name = name.strip()
+            version = version.split()[0].strip()
+            latest = await _fetch_latest_pypi_version(name)
+            tools.append(_tool_result(name, "uv-tool", version, latest, update_cmd=f"uv tool upgrade {name}"))
+    except Exception:
+        return []
+    return tools
+
+
+async def _check_global_npm() -> list[dict]:
+    package_names = ["@larksuite/cli", "@mermaid-js/mermaid-cli", "@anthropic-ai/claude-code"]
+    installed = {}
+    try:
+        code, stdout, _ = await _run_capture(["/opt/homebrew/bin/npm", "ls", "-g", "--depth=0", "--json"], timeout=30)
+        if code == 0 and stdout:
+            deps = json.loads(stdout).get("dependencies", {})
+            installed = {name: data.get("version") for name, data in deps.items()}
+    except Exception:
+        pass
+    results = []
+    for name in package_names:
+        version = installed.get(name)
+        latest = await _fetch_latest_npm_version(name)
+        results.append(_tool_result(name, "global-npm", version, latest, update_cmd=f"npm update -g {name}", install_cmd=f"npm install -g {name}"))
+    return results
 def _refresh_models_cache_if_needed(force: bool = False):
     """Refresh models cache if TTL expired or forced"""
     now = time.time()
@@ -1037,6 +1204,11 @@ async def get_settings():
     return _settings
 
 
+@app.get("/api/settings/chat-backend")
+async def get_chat_backend_api():
+    return {"backend": _get_chat_backend()}
+
+
 @app.put("/api/settings")
 async def update_settings(request: Request):
     global _settings
@@ -1066,20 +1238,22 @@ async def api_switch_opencode_profile(req: ProfileSwitchRequest):
 
 @app.get("/api/cli-agents")
 async def get_cli_agents():
-    """Return status of all monitored CLI tools."""
-    agents = await asyncio.gather(
+    """Return status of update-skill-aligned CLI tools."""
+    checks = await asyncio.gather(
         _check_opencode(),
-        _check_lmstudio_cli(),
-        _check_mlx_tools(),
-        _check_brew_packages(),
+        _check_oh_my_openagent(),
+        _check_ollama(),
+        _check_sub2api(),
+        _check_uv_tools(),
+        _check_global_npm(),
     )
-    flat = []
-    for a in agents:
-        if isinstance(a, list):
-            flat.extend(a)
+    agents = []
+    for item in checks:
+        if isinstance(item, list):
+            agents.extend(item)
         else:
-            flat.append(a)
-    return {"agents": flat}
+            agents.append(item)
+    return {"agents": agents}
 
 
 async def _run_shell_command(cmd: str, timeout: int = 60) -> tuple[bool, str]:
@@ -1113,105 +1287,63 @@ async def install_cli_agents(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    requested_tools = body.get("tools", "all")
-    agents_response = await get_cli_agents()
-    agents = agents_response["agents"]
-    if requested_tools == "all":
-        target_agents = agents
-    else:
-        target_tools = (
-            requested_tools if isinstance(requested_tools, list) else [requested_tools]
-        )
-        target_agents = [a for a in agents if a["name"] in target_tools]
-    # Process each tool
+    requested_tools = body.get("tool", body.get("tools", "all"))
+    agents = (await get_cli_agents())["agents"]
+    target_tools = None if requested_tools == "all" else (requested_tools if isinstance(requested_tools, list) else [requested_tools])
+    target_agents = agents if target_tools is None else [a for a in agents if a["id"] in target_tools or a["name"] in target_tools]
     results = []
     for agent in target_agents:
-        name = agent["name"]
-        if agent["status"] != "missing":
-            results.append(
-                {
-                    "name": name,
-                    "success": True,
-                    "message": f"{name} is already installed",
-                }
-            )
+        if agent.get("installed"):
+            results.append({"name": agent["name"], "success": True, "message": f"{agent['name']} is already installed"})
             continue
-        # Check if installable
-        if name == "lmstudio-cli":
-            results.append(
-                {
-                    "name": name,
-                    "success": False,
-                    "message": "Install/update via LMStudio app",
-                }
-            )
+        install_cmd = agent.get("install_cmd")
+        if not install_cmd:
+            results.append({"name": agent["name"], "success": False, "message": "No install command"})
             continue
-        # Run install command
-        install_cmd = agent["install_cmd"]
-        timeout = 60 if "brew" in install_cmd else 30
-        success, message = await _run_shell_command(install_cmd, timeout=timeout)
-        results.append(
-            {
-                "name": name,
-                "success": success,
-                "message": message,
-            }
-        )
+        success, message = await _run_shell_command(install_cmd, timeout=120)
+        results.append({"name": agent["name"], "success": success, "message": message})
     return {"results": results}
 
 
 @app.post("/api/cli-agents/update")
 async def update_cli_agents(request: Request):
-    """Update outdated CLI tools."""
+    """Update selected CLI tools."""
     try:
         body = await request.json()
     except Exception:
         body = {}
-    requested_tools = body.get("tools", "all")
-    agents_response = await get_cli_agents()
-    agents = agents_response["agents"]
-    if requested_tools == "all":
-        target_agents = agents
-    else:
-        target_tools = (
-            requested_tools if isinstance(requested_tools, list) else [requested_tools]
-        )
-        target_agents = [a for a in agents if a["name"] in target_tools]
-    # Process each tool
+    requested_tools = body.get("tool", body.get("tools", "all"))
+    agents = (await get_cli_agents())["agents"]
+    target_tools = None if requested_tools == "all" else (requested_tools if isinstance(requested_tools, list) else [requested_tools])
+    target_agents = agents if target_tools is None else [a for a in agents if a["id"] in target_tools or a["name"] in target_tools]
     results = []
     for agent in target_agents:
-        name = agent["name"]
-        if agent["status"] not in ("outdated", "unknown"):
-            results.append(
-                {
-                    "name": name,
-                    "success": True,
-                    "message": f"{name} is already up to date",
-                }
-            )
+        update_cmd = agent.get("update_cmd")
+        if not update_cmd:
+            results.append({"name": agent["name"], "success": False, "message": "No update command"})
             continue
-        # Check if updatable
-        if name == "lmstudio-cli":
-            results.append(
-                {
-                    "name": name,
-                    "success": False,
-                    "message": "Install/update via LMStudio app",
-                }
-            )
-            continue
-        # Run update command
-        update_cmd = agent["update_cmd"]
-        timeout = 120 if "pip" in update_cmd else (60 if "brew" in update_cmd else 30)
-        success, message = await _run_shell_command(update_cmd, timeout=timeout)
-        results.append(
-            {
-                "name": name,
-                "success": success,
-                "message": message,
-            }
-        )
+        success, message = await _run_shell_command(update_cmd, timeout=300)
+        results.append({"name": agent["name"], "success": success, "message": message})
     return {"results": results}
+
+
+@app.post("/api/cli-agents/run-update-all")
+async def run_update_all():
+    log_dir = Path.home() / "Library" / "Logs" / "dev.opencode.autoupdate"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "siliconlm-update-all.log"
+    with open(log_file, "a") as f:
+        subprocess.Popen([str(Path.home() / ".local" / "bin" / "update-all")], stdout=f, stderr=f, start_new_session=True)
+    return {"success": True, "log_path": str(log_file)}
+
+
+@app.get("/api/cli-agents/run-update-all/log")
+async def get_update_all_log():
+    log_file = Path.home() / "Library" / "Logs" / "dev.opencode.autoupdate" / "siliconlm-update-all.log"
+    if not log_file.exists():
+        return {"log": ""}
+    lines = log_file.read_text(errors="ignore").splitlines()[-120:]
+    return {"log": "\n".join(lines), "log_path": str(log_file)}
 
 
 @app.post("/api/service/{name}/start")
@@ -1219,6 +1351,9 @@ async def start_service(name: str):
     service = SERVICES.get(name)
     if not service:
         return {"success": False, "message": "Unknown service"}
+
+    if service.get("readonly"):
+        return {"success": False, "message": service.get("note", "Read-only service")}
 
     # Track that this service was explicitly started
     started = _load_started_services()
@@ -1228,9 +1363,6 @@ async def start_service(name: str):
     stopped = _load_stopped_services()
     stopped.discard(name)
     _save_stopped_services(stopped)
-
-    if name == "lmstudio":
-        return _lms_start()
 
     if name == "opencode":
         return _opencode_start()
@@ -1262,95 +1394,6 @@ async def start_service(name: str):
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-
-def _lms_start() -> dict:
-    """Start llmster daemon directly (bypasses broken lms CLI passkey auth)."""
-    # Check if already running
-    if check_process("llmster"):
-        if check_port(11234):
-            return {"success": True, "message": "llmster already running"}
-        return {"success": True, "message": "llmster daemon running (server starting)"}
-
-    # Find llmster binary
-    llmster_dir = Path.home() / ".lmstudio" / "llmster"
-    if not llmster_dir.exists():
-        return {
-            "success": False,
-            "message": "llmster not installed (no ~/.lmstudio/llmster/)",
-        }
-    # Get latest version directory
-    versions = sorted(llmster_dir.iterdir(), reverse=True)
-    if not versions:
-        return {"success": False, "message": "No llmster versions found"}
-    llmster_bin = versions[0] / "llmster"
-    if not llmster_bin.exists():
-        return {
-            "success": False,
-            "message": f"llmster binary not found at {llmster_bin}",
-        }
-
-    try:
-        log_file = Path.home() / "Library" / "Logs" / "siliconlm" / "llmster.log"
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_file, "a") as f:
-            subprocess.Popen(
-                [str(llmster_bin)],
-                stdout=f,
-                stderr=f,
-                start_new_session=True,
-                cwd=str(versions[0]),
-            )
-        # Wait for server to come up
-        for _ in range(20):
-            if check_port(11234):
-                pid = check_process("llmster")
-                return {"success": True, "message": f"llmster started (PID: {pid})"}
-            time.sleep(0.5)
-        pid = check_process("llmster")
-        if pid:
-            return {
-                "success": True,
-                "message": f"llmster daemon started (PID: {pid}), server may still be loading",
-            }
-        return {"success": False, "message": "llmster failed to start"}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-
-def _lms_stop() -> dict:
-    """Stop llmster daemon via psutil, repeatedly kill to prevent auto-respawn."""
-    # For about 5 seconds, repeatedly kill llmster and workers
-    start_time = time.time()
-    killed_pids = []
-    while time.time() - start_time < 5:
-        # Kill llmster processes
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                if proc.info["name"] == "llmster":
-                    try:
-                        proc.kill()
-                        if proc.pid not in killed_pids:
-                            killed_pids.append(proc.pid)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        # Kill workers too
-        for proc in psutil.process_iter(["pid", "cmdline"]):
-            try:
-                cmdline = proc.info.get("cmdline") or []
-                if any(
-                    "liblmstudioworker.js" in arg or "systemresourcesworker.js" in arg
-                    for arg in cmdline
-                ):
-                    try:
-                        proc.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        time.sleep(0.2)
-    return {"success": True, "message": f"llmster stopped (PIDs: {killed_pids})"}
 
 
 def _opencode_stop() -> dict:
@@ -1396,6 +1439,9 @@ async def stop_service(name: str):
     if not service:
         return {"success": False, "message": "Unknown service"}
 
+    if service.get("readonly"):
+        return {"success": False, "message": service.get("note", "Read-only service")}
+
     # Remove from started services (so it won't auto-start next time)
     started = _load_started_services()
     started.discard(name)
@@ -1404,9 +1450,6 @@ async def stop_service(name: str):
     stopped = _load_stopped_services()
     stopped.add(name)
     _save_stopped_services(stopped)
-
-    if name == "lmstudio":
-        return await asyncio.to_thread(_lms_stop)
 
     if name == "opencode":
         return await asyncio.to_thread(_opencode_stop)
@@ -1458,6 +1501,8 @@ def _generic_stop(service: dict) -> dict:
 
 @app.post("/api/service/{name}/restart")
 async def restart_service(name: str):
+    if SERVICES.get(name, {}).get("readonly"):
+        return {"success": False, "message": SERVICES[name].get("note", "Read-only service")}
     stop_result = await stop_service(name)
     if name not in ("opencode",):
         import asyncio
@@ -1552,7 +1597,7 @@ async def delete_download(req: DownloadRequest):
 
 class SearchRequest(BaseModel):
     query: str
-    filter: str = "embedding"  # "embedding", "llm", "all"
+    filter: str = "llm"  # "llm", "all"
 
 
 @app.post("/api/search/huggingface")
@@ -1619,139 +1664,29 @@ async def search_huggingface(req: SearchRequest):
 
 # ============================================================================
 # OpenAI-compatible Proxy Routes (/v1/*)
-# Automatically routes embeddings to MLX (8766), others to LMStudio (11234)
+# SiliconLM is dashboard-only; inference proxying is intentionally disabled.
 # ============================================================================
-
-
-@app.api_route("/v1/embeddings", methods=["GET", "POST"])
-async def proxy_embeddings(request: Request):
-    body = {}
-    if request.method == "POST":
-        try:
-            body = await request.json()
-        except Exception:
-            pass
-
-    start_time = time.time()
-    response = await _proxy_request(request, PROXY_TARGETS["embeddings"])
-    latency_ms = (time.time() - start_time) * 1000
-
-    try:
-        resp_data = json.loads(response.body)
-        usage = resp_data.get("usage", {})
-        tokens = usage.get("total_tokens", 0)
-        dimensions = usage.get("dimensions", 0)
-        model = body.get("model", resp_data.get("model", "unknown"))
-        input_text = body.get("input", "")
-        if isinstance(input_text, list):
-            input_text = input_text[0] if input_text else ""
-        preview = (input_text[:40] + "...") if len(input_text) > 40 else input_text
-
-        _activity_log.append(
-            {
-                "time": time.strftime("%H:%M:%S"),
-                "type": "embed",
-                "model": model.split("/")[-1][:25],
-                "latency_ms": round(latency_ms, 1),
-                "tokens": tokens,
-                "dimensions": dimensions,
-                "preview": preview,
-            }
-        )
-    except Exception:
-        pass
-
-    return response
 
 
 @app.api_route("/v1/models", methods=["GET"])
 async def proxy_models(request: Request):
-    async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-        results = {"object": "list", "data": []}
-
-        # Get embedding models from MLX server
-        try:
-            r = await client.get(f"{PROXY_TARGETS['embeddings']}/v1/models")
-            if r.status_code == 200:
-                data = r.json().get("data", [])
-                for m in data:
-                    m["type"] = "embedding"
-                results["data"].extend(data)
-        except Exception:
-            pass
-
-        # Get chat models from LMStudio (filter out embedding models)
-        try:
-            r = await client.get(f"{PROXY_TARGETS['lmstudio']}/v1/models")
-            if r.status_code == 200:
-                data = r.json().get("data", [])
-                for m in data:
-                    model_id = m.get("id", "").lower()
-                    # Skip embedding models - they're served by MLX
-                    if any(p in model_id for p in EMBEDDING_MODELS):
-                        continue
-                    m["type"] = "chat"
-                    results["data"].append(m)
-        except Exception:
-            pass
-
-        return results
+    return {"object": "list", "data": []}
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def proxy_v1(request: Request, path: str):
-    body = {}
-    if request.method in ["POST", "PUT"]:
-        try:
-            body = await request.json()
-        except Exception:
-            pass
-
-    start_time = time.time()
-    is_embedding = _is_embedding_request(path, body)
-
-    if is_embedding:
-        target = PROXY_TARGETS["embeddings"]
-    else:
-        target = PROXY_TARGETS["lmstudio"]
-
-    response = await _proxy_request(request, target)
-    latency_ms = (time.time() - start_time) * 1000
-
-    # Log activity
-    try:
-        resp_data = json.loads(response.body)
-        tokens = resp_data.get("usage", {}).get("total_tokens", 0)
-        model = body.get("model", resp_data.get("model", "unknown"))
-
-        if is_embedding:
-            input_text = body.get("input", "")
-            if isinstance(input_text, list):
-                input_text = input_text[0] if input_text else ""
-            preview = (input_text[:40] + "...") if len(input_text) > 40 else input_text
-            req_type = "embed"
-        else:
-            _lmstudio_stats["requests"] += 1
-            _lmstudio_stats["tokens"] += tokens
-            messages = body.get("messages", [])
-            last_msg = messages[-1]["content"] if messages else ""
-            preview = (last_msg[:40] + "...") if len(last_msg) > 40 else last_msg
-            req_type = "chat"
-
-        _activity_log.append(
+    return Response(
+        status_code=404,
+        content=json.dumps(
             {
-                "time": time.strftime("%H:%M:%S"),
-                "type": req_type,
-                "model": model.split("/")[-1][:25],
-                "latency_ms": round(latency_ms, 1),
-                "tokens": tokens,
-                "preview": preview,
+                "error": {
+                    "message": "Inference proxying is not provided by SiliconLM dashboard mode",
+                    "type": "not_found",
+                }
             }
-        )
-    except Exception:
-        pass
-
-    return response
+        ),
+        headers={"content-type": "application/json"},
+    )
 
 
 if __name__ == "__main__":
