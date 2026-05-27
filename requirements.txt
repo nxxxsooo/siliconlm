@@ -4,7 +4,3 @@ psutil>=7.2.2
 huggingface_hub>=1.5.0
 pydantic>=2.12.5
 httpx>=0.28.1
-mlx>=0.30.6
-mlx-embeddings>=0.0.5
-mlx-lm>=0.30.7
-sentence-transformers>=5.2.3
