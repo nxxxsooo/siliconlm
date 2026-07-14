@@ -3,6 +3,10 @@
 ## Overview
 Dashboard and status layer for local LLM tooling on Apple Silicon Macs. Provides a web UI on port 1234 for machine status, Ollama read-only status, OpenCode profile/lifecycle visibility, HuggingFace downloads, and CLI/tool update visibility. Written in Python with FastAPI and a Tailwind/vanilla JS frontend.
 
+## Status
+
+Retired on 2026-07-14. The source and public landing page are retained for historical reference, but the dashboard is no longer deployed or maintained. Local launchers, aliases, runtime state, and the mectl resource were removed. Ollama models and `/Users/mingjian/Models/` are independent assets and were intentionally preserved.
+
 ## Architecture
 ```text
 Client / Browser
