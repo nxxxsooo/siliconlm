@@ -6,7 +6,7 @@
 ## Changelog
 
 ### 2026-07-14
-- **chore**: Retired SiliconLM after its dashboard had remained disabled and unused; preserved the final dashboard-only source and public landing page as historical material.
+- **chore**: Stopped the author's unused local SiliconLM deployment while keeping the public project, source repository, and landing page available.
 - **chore**: Removed local launch aliases, helper scripts, mectl registration, runtime venv/state, and logs while preserving all Ollama tags and `/Users/mingjian/Models/` source folders.
 
 ### 2026-05-21

@@ -5,7 +5,7 @@ Dashboard and status layer for local LLM tooling on Apple Silicon Macs. Provides
 
 ## Status
 
-Retired on 2026-07-14. The source and public landing page are retained for historical reference, but the dashboard is no longer deployed or maintained. Local launchers, aliases, runtime state, and the mectl resource were removed. Ollama models and `/Users/mingjian/Models/` are independent assets and were intentionally preserved.
+Not locally deployed as of 2026-07-14. The public project, source, and landing page remain active, while the author's local launchers, aliases, runtime state, and mectl resource were removed. Ollama models and `/Users/mingjian/Models/` are independent assets and were intentionally preserved.
 
 ## Architecture
 ```text

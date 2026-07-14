@@ -3,7 +3,7 @@
 [English](README.md) | [网站](https://mjshao.fun/siliconlm/)
 
 > [!NOTE]
-> SiliconLM 已于 2026 年 7 月 14 日停止维护。仓库与网站仅作为历史源码保留，本地控制面板不再部署。
+> SiliconLM 作为公开项目继续保留，但目前不再部署于作者的 Mac。本地控制面板运行环境和启动入口已于 2026 年 7 月 14 日移除。
 
 Apple Silicon Mac 本地 LLM 运维面板。SiliconLM 现在专注展示机器状态、Ollama 只读状态、OpenCode 配置/服务可见性、HuggingFace 模型下载，以及本地工具更新状态。
 

@@ -3,7 +3,7 @@
 [中文文档](README_CN.md) | [Website](https://mjshao.fun/siliconlm/)
 
 > [!NOTE]
-> SiliconLM was retired on July 14, 2026. The repository and website are preserved as historical source; the local dashboard is no longer maintained or deployed.
+> SiliconLM is preserved as a public project but is not currently deployed on the author's Mac. The local dashboard runtime and launch helpers were removed on July 14, 2026.
 
 Local LLM dashboard and status layer for Apple Silicon Macs. SiliconLM shows machine status, Ollama read-only status, OpenCode profile/lifecycle visibility, HuggingFace downloads, and local tool/update visibility from one FastAPI dashboard.
 
